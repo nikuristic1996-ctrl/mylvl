@@ -20,14 +20,14 @@ For a production build, run `npm run build`.
 - Duplicate screenshot import protection.
 - Local browser persistence for the prototype.
 - PWA manifest and offline shell caching.
-- Supabase email magic-link sign-in when configured, plus a database schema with row-level security in `supabase/schema.sql`.
+- Supabase email magic-link sign-in, cloud activity and avatar storage when configured, plus the secure database schema in `supabase/schema.sql`.
 - Provider connection states are placeholders. Apple Health, Health Connect, Garmin and Strava are not connected.
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and configure the public Supabase URL and anon key to enable authentication. The screenshot analysis endpoint must be a server you control; keep provider API secrets server-side. Its response can include `type`, `date`, `duration`, `distance`, `calories`, `steps`, and `notes`.
+Copy `.env.example` to `.env.local` and configure the Supabase project URL and publishable key to enable authentication and cloud storage. Run `supabase/schema.sql` in the Supabase SQL editor. Add the local development URL and the deployed Vercel URL to Supabase Auth's allowed redirect URLs. Never use a service-role key in the browser. The screenshot analysis endpoint must be a server you control; keep provider API secrets server-side. Its response can include `type`, `date`, `duration`, `distance`, `calories`, `steps`, and `notes`.
 
-The Supabase SQL schema is a foundation for profiles, private activities, experience transactions, progress and integrations. Local prototype activity data remains in the browser; cloud synchronization is a next step.
+With no signed-in account, the prototype saves to local browser storage. Once Supabase is configured and a user signs in, activities and avatar changes use the private cloud tables. Existing local demo data is not uploaded automatically.
 
 ## Deploy to Vercel
 

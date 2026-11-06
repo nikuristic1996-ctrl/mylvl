@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import type { Session } from "@supabase/supabase-js";
 import {
   Activity as ActivityIcon,
   ArrowDownRight,
@@ -44,6 +45,11 @@ import {
   type Avatar,
 } from "./domain";
 import { supabase } from "./supabase";
+import {
+  loadCloudData,
+  recordCloudActivity,
+  saveCloudAvatar,
+} from "./supabaseData";
 
 const nav = [
   { to: "/", label: "Overview", icon: Home },
@@ -69,19 +75,88 @@ const chartBars = [38, 64, 45, 80, 56, 93, 68];
 
 export default function App() {
   const [data, setData] = useState<AppData>(loadData);
+  const [session, setSession] = useState<Session | null>(null);
+  const [cloudTotalXp, setCloudTotalXp] = useState<number | null>(null);
+  const [cloudState, setCloudState] = useState<
+    "local" | "loading" | "ready" | "error"
+  >(supabase ? "loading" : "local");
   const [showAdd, setShowAdd] = useState(false);
   const [toast, setToast] = useState("");
   const location = useLocation();
-  useEffect(() => saveData(data), [data]);
+  const userId = session?.user.id ?? null;
+  const userEmail = session?.user.email ?? null;
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    void supabase.auth.getSession().then(({ data: authData }) => {
+      if (active) setSession(authData.session);
+    });
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, nextSession) => {
+        setSession(nextSession);
+      },
+    );
+    return () => {
+      active = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+  useEffect(() => {
+    if (!userId) {
+      setData(loadData());
+      setCloudTotalXp(null);
+      setCloudState("local");
+      return;
+    }
+    let active = true;
+    setCloudState("loading");
+    void loadCloudData(userId)
+      .then(({ data: cloudData, totalXp: xp }) => {
+        if (!active) return;
+        setData(cloudData);
+        setCloudTotalXp(xp);
+        setCloudState("ready");
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setData({
+          activities: [],
+          avatar: {
+            name: userEmail?.split("@")[0] ?? "Adventurer",
+            hair: "#b7f56a",
+            skin: "#d89b73",
+            outfit: "#a893ff",
+          },
+        });
+        setCloudTotalXp(0);
+        setCloudState("error");
+        setToast(
+          error instanceof Error
+            ? `Cloud sync failed: ${error.message}`
+            : "Cloud sync failed.",
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId, userEmail]);
+  useEffect(() => {
+    if (!userId) saveData(data);
+  }, [data, userId]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 3200);
     return () => clearTimeout(timer);
   }, [toast]);
   const totalXp =
+    cloudTotalXp ??
     data.activities.reduce((sum, item) => sum + item.xp, 0) + 1240;
   const level = levelForXp(totalXp);
-  const addActivity = (activity: Activity) => {
+  const addActivity = async (activity: Activity) => {
+    if (session && cloudState !== "ready") {
+      setToast("Wait until your cloud profile finishes loading.");
+      return false;
+    }
     if (
       activity.sourceKey &&
       data.activities.some((item) => item.sourceKey === activity.sourceKey)
@@ -89,15 +164,56 @@ export default function App() {
       setToast("This activity was already imported.");
       return false;
     }
+    let savedActivity = activity;
+    if (session && supabase) {
+      try {
+        const result = await recordCloudActivity(activity);
+        if (result.duplicate) {
+          setToast("This activity was already imported.");
+          return false;
+        }
+        savedActivity = { ...activity, id: result.id, xp: result.xp };
+        setCloudTotalXp((current) => (current ?? 0) + result.xp);
+      } catch (error) {
+        setToast(
+          error instanceof Error
+            ? `Could not save activity: ${error.message}`
+            : "Could not save activity.",
+        );
+        return false;
+      }
+    }
     setData((current) => ({
       ...current,
-      activities: [activity, ...current.activities],
+      activities: [savedActivity, ...current.activities],
     }));
-    setToast(`+${activity.xp} XP earned · nice work`);
+    setToast(`+${savedActivity.xp} XP earned · nice work`);
     return true;
   };
-  const updateAvatar = (avatar: Avatar) =>
+  const updateAvatar = async (avatar: Avatar) => {
+    if (session && cloudState !== "ready") {
+      setToast("Wait until your cloud profile finishes loading.");
+      return;
+    }
+    if (session) {
+      try {
+        await saveCloudAvatar(session.user.id, avatar);
+      } catch (error) {
+        setToast(
+          error instanceof Error
+            ? `Could not save avatar: ${error.message}`
+            : "Could not save avatar.",
+        );
+        return;
+      }
+    }
     setData((current) => ({ ...current, avatar }));
+    setToast(
+      session
+        ? "Avatar saved to your account."
+        : "Avatar saved on this device.",
+    );
+  };
   const pageTitle =
     nav.find((item) => item.to === location.pathname)?.label ?? "Overview";
   return (
@@ -227,7 +343,12 @@ export default function App() {
               path="/import"
               element={<ImportPage addActivity={addActivity} />}
             />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/settings"
+              element={
+                <SettingsPage session={session} cloudState={cloudState} />
+              }
+            />
             <Route
               path="*"
               element={
@@ -267,7 +388,9 @@ export default function App() {
         <ActivityModal
           onClose={() => setShowAdd(false)}
           onSave={(activity) => {
-            if (addActivity(activity)) setShowAdd(false);
+            void addActivity(activity).then((saved) => {
+              if (saved) setShowAdd(false);
+            });
           }}
         />
       )}
@@ -956,7 +1079,7 @@ type ImportDraft = {
 function ImportPage({
   addActivity,
 }: {
-  addActivity: (activity: Activity) => boolean;
+  addActivity: (activity: Activity) => Promise<boolean>;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
@@ -1026,7 +1149,7 @@ function ImportPage({
       setAnalyzing(false);
     }
   };
-  const saveImport = (event: FormEvent) => {
+  const saveImport = async (event: FormEvent) => {
     event.preventDefault();
     if (!draft || !file) return;
     const key = `${file.name}:${file.size}:${draft.date}:${draft.type}:${draft.duration}:${draft.distance}`;
@@ -1043,7 +1166,7 @@ function ImportPage({
       source: "screenshot",
       sourceKey: key,
     };
-    if (addActivity(activity)) {
+    if (await addActivity(activity)) {
       setStatus("Activity confirmed and XP awarded.");
       setFile(null);
       setDraft(null);
@@ -1287,30 +1410,38 @@ function ImportPage({
   );
 }
 
-function SettingsPage() {
+function SettingsPage({
+  session,
+  cloudState,
+}: {
+  session: Session | null;
+  cloudState: "local" | "loading" | "ready" | "error";
+}) {
   const configured = Boolean(supabase);
   const [email, setEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
-  const [signedIn, setSignedIn] = useState(false);
-  useEffect(() => {
-    if (supabase)
-      void supabase.auth
-        .getSession()
-        .then(({ data }) => setSignedIn(Boolean(data.session)));
-  }, []);
   const requestSignIn = async (event: FormEvent) => {
     event.preventDefault();
     if (!supabase) return;
-    const { error } = await supabase.auth.signInWithOtp({ email });
-    setAuthMessage(
-      error ? error.message : "Check your email for a secure sign-in link.",
-    );
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      setAuthMessage(
+        error ? error.message : "Check your email for a secure sign-in link.",
+      );
+    } catch (error) {
+      setAuthMessage(
+        error instanceof Error ? error.message : "Could not send sign-in link.",
+      );
+    }
   };
   const signOut = async () => {
-    await supabase?.auth.signOut();
-    setSignedIn(false);
-    setAuthMessage("You have signed out.");
+    const { error } = (await supabase?.auth.signOut()) ?? {};
+    setAuthMessage(error ? error.message : "You have signed out.");
   };
+  const signedIn = Boolean(session);
   return (
     <>
       <PageHeading
@@ -1326,14 +1457,20 @@ function SettingsPage() {
           <h3>Your account</h3>
           <p>
             {configured
-              ? "Sign in securely to prepare your personal cloud profile."
+              ? signedIn
+                ? `Cloud profile for ${session?.user.email ?? "your account"}.`
+                : "Sign in securely to sync your profile and activity history."
               : "Your progress is saved in this browser for now."}
           </p>
           <div className="setting-status">
-            <span className={configured ? "status-online" : ""} />
+            <span className={cloudState === "ready" ? "status-online" : ""} />
             {configured
               ? signedIn
-                ? "Signed in"
+                ? cloudState === "loading"
+                  ? "Loading cloud data"
+                  : cloudState === "error"
+                    ? "Cloud sync error"
+                    : "Cloud sync active"
                 : "Supabase ready"
               : "Local demo mode"}
           </div>
@@ -1364,7 +1501,7 @@ function SettingsPage() {
           ) : (
             <div className="setup-hint">
               Add <code>VITE_SUPABASE_URL</code> and{" "}
-              <code>VITE_SUPABASE_ANON_KEY</code> to enable sign-in.
+              <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to enable sign-in.
             </div>
           )}
         </section>
@@ -1392,19 +1529,38 @@ function SettingsPage() {
             <Shield size={18} />
           </div>
           <h3>Your data</h3>
-          <p>Activity data is saved in this browser on this device.</p>
+          <p>
+            {signedIn && cloudState === "ready"
+              ? "Your activities and avatar are saved to your account."
+              : signedIn
+                ? "Your cloud account is signed in, but sync needs attention."
+                : "Activity data is saved in this browser on this device."}
+          </p>
           <div className="setting-status">
-            <span className="status-online" /> Stored locally
+            <span
+              className={
+                signedIn && cloudState === "ready" ? "status-online" : ""
+              }
+            />
+            {signedIn
+              ? cloudState === "loading"
+                ? "Syncing with Supabase"
+                : cloudState === "error"
+                  ? "Cloud sync needs attention"
+                  : "Backed up to your account"
+              : "Stored on this device"}
           </div>
-          <button
-            className="secondary-button"
-            onClick={() => {
-              localStorage.removeItem("mylvl-v1");
-              window.location.reload();
-            }}
-          >
-            Reset demo data <ArrowDownRight size={15} />
-          </button>
+          {!signedIn && (
+            <button
+              className="secondary-button"
+              onClick={() => {
+                localStorage.removeItem("mylvl-v1");
+                window.location.reload();
+              }}
+            >
+              Reset demo data <ArrowDownRight size={15} />
+            </button>
+          )}
         </section>
       </div>
       <div className="settings-footnote">
@@ -1420,7 +1576,7 @@ function ActivityModal({
   onSave,
 }: {
   onClose: () => void;
-  onSave: (activity: Activity) => void;
+  onSave: (activity: Activity) => void | Promise<void>;
 }) {
   const [type, setType] = useState<ActivityType>("Running");
   const [duration, setDuration] = useState("30");
@@ -1430,7 +1586,7 @@ function ActivityModal({
   const [notes, setNotes] = useState("");
   const save = (event: FormEvent) => {
     event.preventDefault();
-    onSave({
+    void onSave({
       id: crypto.randomUUID(),
       type,
       date: new Date(`${date}T12:00:00`).toISOString(),
