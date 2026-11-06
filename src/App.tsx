@@ -13,6 +13,7 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
+  Download,
   Dumbbell,
   Flame,
   Footprints,
@@ -73,6 +74,11 @@ const activityTypes: ActivityType[] = [
 const days = ["M", "T", "W", "T", "F", "S", "S"];
 const chartBars = [38, 64, 45, 80, 56, 93, 68];
 
+type AppInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
 export default function App() {
   const [data, setData] = useState<AppData>(loadData);
   const [session, setSession] = useState<Session | null>(null);
@@ -82,9 +88,33 @@ export default function App() {
   >(supabase ? "loading" : "local");
   const [showAdd, setShowAdd] = useState(false);
   const [toast, setToast] = useState("");
+  const [installPrompt, setInstallPrompt] =
+    useState<AppInstallPromptEvent | null>(null);
+  const [appInstalled, setAppInstalled] = useState(false);
   const location = useLocation();
   const userId = session?.user.id ?? null;
   const userEmail = session?.user.email ?? null;
+  useEffect(() => {
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+    setAppInstalled(standalone);
+
+    const handleBeforeInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as AppInstallPromptEvent);
+    };
+    const handleInstalled = () => {
+      setAppInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("appinstalled", handleInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("appinstalled", handleInstalled);
+    };
+  }, []);
   useEffect(() => {
     if (!supabase) return;
     let active = true;
@@ -346,7 +376,13 @@ export default function App() {
             <Route
               path="/settings"
               element={
-                <SettingsPage session={session} cloudState={cloudState} />
+                <SettingsPage
+                  session={session}
+                  cloudState={cloudState}
+                  installPrompt={installPrompt}
+                  appInstalled={appInstalled}
+                  onInstallPromptConsumed={() => setInstallPrompt(null)}
+                />
               }
             />
             <Route
@@ -1413,13 +1449,34 @@ function ImportPage({
 function SettingsPage({
   session,
   cloudState,
+  installPrompt,
+  appInstalled,
+  onInstallPromptConsumed,
 }: {
   session: Session | null;
   cloudState: "local" | "loading" | "ready" | "error";
+  installPrompt: AppInstallPromptEvent | null;
+  appInstalled: boolean;
+  onInstallPromptConsumed: () => void;
 }) {
   const configured = Boolean(supabase);
   const [email, setEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const installApp = async () => {
+    if (appInstalled) return;
+    if (!installPrompt) {
+      setShowInstallGuide(true);
+      return;
+    }
+    try {
+      await installPrompt.prompt();
+      await installPrompt.userChoice;
+      onInstallPromptConsumed();
+    } catch {
+      setShowInstallGuide(true);
+    }
+  };
   const requestSignIn = async (event: FormEvent) => {
     event.preventDefault();
     if (!supabase) return;
@@ -1448,6 +1505,16 @@ function SettingsPage({
         eyebrow="YOUR SPACE"
         title="The little details."
         detail="A few things that make mylvl yours."
+        action={
+          <button
+            className="primary-button install-app-button"
+            onClick={() => void installApp()}
+            disabled={appInstalled}
+          >
+            {appInstalled ? <Check size={17} /> : <Download size={17} />}
+            {appInstalled ? "App installed" : "Install app"}
+          </button>
+        }
       />
       <div className="settings-grid">
         <section className="panel settings-card account-settings">
@@ -1567,8 +1634,75 @@ function SettingsPage({
         mylvl is an early access prototype. Integrations are clearly marked
         until a secure provider connection is available.
       </div>
+      {showInstallGuide && (
+        <div
+          className="modal-scrim"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowInstallGuide(false);
+            }
+          }}
+        >
+          <section
+            className="install-help-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="install-help-title"
+          >
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">TAKE MYLVL WITH YOU</div>
+                <h2 id="install-help-title">Install mylvl</h2>
+              </div>
+              <button
+                className="icon-button"
+                onClick={() => setShowInstallGuide(false)}
+                aria-label="Close install instructions"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {isIosDevice() ? (
+              <ol className="install-steps">
+                <li>Open this page in Safari.</li>
+                <li>Tap Share (the square with the arrow).</li>
+                <li>Choose “Add to Home Screen”, then tap “Add”.</li>
+              </ol>
+            ) : isAndroidDevice() ? (
+              <ol className="install-steps">
+                <li>Open this page in Chrome.</li>
+                <li>Tap ⋮, then “Install app” or “Add to Home screen”.</li>
+                <li>Confirm by tapping “Install”.</li>
+              </ol>
+            ) : (
+              <p className="install-help-copy">
+                On Android, open mylvl in Chrome and choose “Install app” from
+                the ⋮ menu. On iPhone or iPad, open it in Safari, tap Share,
+                then “Add to Home Screen”.
+              </p>
+            )}
+            <button
+              className="primary-button install-help-done"
+              onClick={() => setShowInstallGuide(false)}
+            >
+              Got it
+            </button>
+          </section>
+        </div>
+      )}
     </>
   );
+}
+
+function isIosDevice() {
+  return (
+    /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+function isAndroidDevice() {
+  return /Android/i.test(navigator.userAgent);
 }
 
 function ActivityModal({
