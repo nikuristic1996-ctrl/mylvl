@@ -116,7 +116,7 @@ a {
 }
 .workspace-label,
 .eyebrow {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 750;
   letter-spacing: 1.38px;
   color: #858a97;
@@ -325,7 +325,7 @@ a {
   font-weight: 650;
 }
 .page-heading p {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted);
   margin: 9px 0 0;
 }
@@ -708,7 +708,7 @@ a {
   font-weight: 620;
 }
 .section-heading p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   margin: 5px 0 0;
 }
@@ -752,8 +752,8 @@ a {
   background: #74b8fb17;
 }
 .stat-label {
-  font-size: 9px;
-  color: #a6a8b1;
+  font-size: 11px;
+  color: #b9bbc3;
 }
 .stat-value {
   font-size: 22px;
@@ -762,15 +762,15 @@ a {
   margin-top: 6px;
 }
 .stat-value span {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0;
   color: #9699a4;
   margin-left: 4px;
   font-weight: 500;
 }
 .stat-card small {
-  font-size: 8px;
-  color: #757a86;
+  font-size: 10px;
+  color: #a0a4ae;
   display: block;
   margin-top: 6px;
 }
@@ -831,12 +831,12 @@ a {
   flex: 1;
 }
 .activity-info b {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 620;
 }
 .activity-info span {
-  font-size: 8px;
-  color: #858a95;
+  font-size: 10px;
+  color: #a0a4ae;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -847,17 +847,17 @@ a {
   gap: 5px;
 }
 .activity-metric b {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 590;
 }
 .activity-metric b small {
-  font-size: 8px;
+  font-size: 10px;
   color: #9b9ea7;
   font-weight: 500;
 }
 .activity-metric span {
-  font-size: 8px;
-  color: #858a95;
+  font-size: 10px;
+  color: #a0a4ae;
 }
 .activity-xp {
   font-size: 10px;
@@ -867,7 +867,7 @@ a {
   white-space: nowrap;
 }
 .activity-xp small {
-  font-size: 8px;
+  font-size: 10px;
 }
 .activity-chevron {
   color: #5f636d;
@@ -892,7 +892,7 @@ a {
   color: var(--lime);
 }
 .level-top p {
-  font-size: 9px;
+  font-size: 11px;
   color: #9296a1;
   margin: 0;
 }
@@ -922,12 +922,12 @@ a {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 8px;
+  font-size: 10px;
   color: #888d98;
   margin-top: 24px;
 }
 .xp-labels b {
-  font-size: 10px;
+  font-size: 11px;
   color: #e6e7e3;
 }
 .xp-track {
@@ -950,7 +950,7 @@ a {
   justify-content: space-between;
   align-items: center;
   margin-top: 9px;
-  font-size: 8px;
+  font-size: 10px;
   color: #838792;
 }
 .xp-foot span:first-child {
@@ -1023,7 +1023,7 @@ a {
   box-shadow: 0 0 14px #b7f56a34;
 }
 .week-day small {
-  font-size: 8px;
+  font-size: 10px;
   color: #888d97;
 }
 .week-legend {
@@ -1033,7 +1033,7 @@ a {
   margin-top: 13px;
   border-top: 1px solid #282b33;
   padding-top: 12px;
-  font-size: 8px;
+  font-size: 10px;
   color: #898d96;
 }
 .week-legend span {
@@ -1188,7 +1188,7 @@ a {
   margin: 12px 0 3px;
 }
 .character-card > p {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   margin: 0;
 }
@@ -1212,7 +1212,7 @@ a {
   font-size: 12px;
 }
 .character-stats small {
-  font-size: 7px;
+  font-size: 9px;
   color: #898d97;
   letter-spacing: 0.8px;
 }
@@ -1419,11 +1419,11 @@ a {
   flex-direction: column;
 }
 .milestone-copy b {
-  font-size: 10px;
+  font-size: 12px;
 }
 .milestone-copy > span {
-  font-size: 8px;
-  color: #8d919b;
+  font-size: 11px;
+  color: #a6aab4;
   line-height: 1.5;
   margin: 5px 0 9px;
 }
@@ -1440,8 +1440,8 @@ a {
   background: var(--lime);
 }
 .milestone-copy small {
-  font-size: 7px;
-  color: #848994;
+  font-size: 10px;
+  color: #a0a4ae;
   margin-top: 5px;
 }
 .earned-check {
@@ -1477,7 +1477,7 @@ a {
   margin: 6px 0 4px;
 }
 .import-panel-heading p {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   margin: 0;
 }
@@ -1521,10 +1521,10 @@ a {
   margin-bottom: 9px;
 }
 .upload-zone b {
-  font-size: 10px;
+  font-size: 12px;
 }
 .upload-zone span {
-  font-size: 9px;
+  font-size: 11px;
   color: #969aa4;
   margin-top: 5px;
 }
@@ -1534,8 +1534,8 @@ a {
   text-decoration: underline;
 }
 .upload-zone > small {
-  font-size: 7px;
-  color: #707580;
+  font-size: 10px;
+  color: #a0a4ae;
   margin-top: 11px;
 }
 .selected-file {
@@ -1569,13 +1569,13 @@ a {
   min-width: 0;
 }
 .file-info > b {
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .file-info > span {
-  font-size: 8px;
+  font-size: 10px;
   color: #898d98;
 }
 .analyzed-note {
@@ -1583,7 +1583,7 @@ a {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 8px;
+  font-size: 10px;
   margin-top: 3px;
 }
 .analyze-button {
@@ -1627,10 +1627,10 @@ a {
   gap: 4px;
 }
 .form-heading b {
-  font-size: 10px;
+  font-size: 12px;
 }
 .form-heading span:not(.xp-preview) {
-  font-size: 8px;
+  font-size: 10px;
   color: #898d97;
 }
 .xp-preview {
@@ -1672,7 +1672,7 @@ a {
   color: #b7f56a;
 }
 .privacy-note span {
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.55;
 }
 .privacy-note b {
@@ -1690,7 +1690,7 @@ a {
   margin: 6px 0;
 }
 .providers-card > p {
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.5;
   color: #90939c;
   margin: 0 0 11px;
@@ -1719,14 +1719,14 @@ a {
   flex: 1;
 }
 .provider-row b {
-  font-size: 8px;
+  font-size: 11px;
 }
 .provider-row small {
-  font-size: 7px;
+  font-size: 10px;
   color: #828690;
 }
 .soon-pill {
-  font-size: 6px;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.5px;
   color: #a3a6af;
@@ -1748,7 +1748,7 @@ a {
   margin-top: 1px;
 }
 .import-tip p {
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.6;
   color: #a3a0ab;
   margin: 0;
@@ -2089,14 +2089,14 @@ a {
     font-size: 27px;
   }
   .page-heading p {
-    font-size: 10px;
+    font-size: 12px;
     max-width: 280px;
     line-height: 1.5;
   }
   .page-heading > .primary-button {
     height: 36px;
     padding: 0 11px;
-    font-size: 9px;
+    font-size: 11px;
     white-space: nowrap;
   }
   .mobile-break {
@@ -2128,7 +2128,7 @@ a {
     font-size: 23px;
   }
   .welcome-copy p {
-    font-size: 9px;
+    font-size: 11px;
     max-width: 190px;
     line-height: 1.5;
     margin-bottom: 15px;
@@ -2140,7 +2140,7 @@ a {
     transform-origin: right center;
   }
   .online-label {
-    font-size: 7px;
+    font-size: 9px;
     letter-spacing: 0.75px;
   }
   .stats-grid {
@@ -2156,13 +2156,13 @@ a {
     margin-bottom: 10px;
   }
   .stat-label {
-    font-size: 8px;
+    font-size: 10px;
   }
   .stat-value {
     font-size: 20px;
   }
   .stat-card small {
-    font-size: 7px;
+    font-size: 9px;
   }
   .activity-row {
     padding: 11px 10px;
@@ -2174,18 +2174,18 @@ a {
   }
   .activity-info b,
   .activity-metric b {
-    font-size: 9px;
+    font-size: 11px;
   }
   .activity-info span,
   .activity-metric span {
-    font-size: 7px;
+    font-size: 9px;
   }
   .activity-chevron {
     display: none;
   }
   .activity-xp {
     margin-left: 1px;
-    font-size: 9px;
+    font-size: 11px;
   }
   .level-card {
     padding: 15px;
@@ -2224,7 +2224,7 @@ a {
     align-items: center;
     justify-content: center;
     gap: 4px;
-    font-size: 7px;
+    font-size: 9px;
   }
   .mobile-nav-link.active {
     color: var(--lime);
@@ -2310,7 +2310,7 @@ a {
     gap: 5px;
   }
   .result-count {
-    font-size: 8px;
+    font-size: 10px;
   }
   .toast {
     bottom: calc(75px + env(safe-area-inset-bottom));
