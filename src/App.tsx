@@ -1504,19 +1504,19 @@ function SettingsPage({
       setAuthBusy(false);
     }
   };
-  const signInWithProvider = async (provider: "google" | "apple") => {
+  const signInWithGoogle = async () => {
     if (!supabase) return;
     setAuthBusy(true);
     setAuthMessage("");
     try {
       const { error } = await supabase.auth.signInWithOAuth({
-        provider,
+        provider: "google",
         options: { redirectTo: window.location.origin },
       });
       if (error) setAuthMessage(error.message);
     } catch (error) {
       setAuthMessage(
-        error instanceof Error ? error.message : `Could not start ${provider} sign-in.`,
+        error instanceof Error ? error.message : "Could not start Google sign-in.",
       );
       setAuthBusy(false);
     }
@@ -1582,20 +1582,10 @@ function SettingsPage({
                   className="secondary-button social-auth-button"
                   type="button"
                   disabled={authBusy}
-                  onClick={() => void signInWithProvider("google")}
+                  onClick={() => void signInWithGoogle()}
                 >
                   <span className="social-provider-mark google-mark" aria-hidden="true">G</span>
-                  Continue with Google
-                  <ArrowRight size={15} />
-                </button>
-                <button
-                  className="secondary-button social-auth-button"
-                  type="button"
-                  disabled={authBusy}
-                  onClick={() => void signInWithProvider("apple")}
-                >
-                  <span className="social-provider-mark apple-mark" aria-hidden="true">A</span>
-                  Continue with Apple
+                  Continue with Google / Gmail
                   <ArrowRight size={15} />
                 </button>
                 <div className="auth-divider"><span>or use email</span></div>
