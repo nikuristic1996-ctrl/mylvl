@@ -2423,7 +2423,57 @@ a {
 }
 .settings-auth-form {
   width: 100%;
+  margin-top: 0;
+}
+.settings-auth-options {
+  width: 100%;
   margin-top: auto;
+  display: grid;
+  gap: 8px;
+}
+.settings-auth-options .secondary-button {
+  margin: 0;
+}
+.social-auth-button {
+  justify-content: flex-start;
+  min-height: 42px;
+}
+.social-auth-button > svg:last-child {
+  margin-left: auto;
+}
+.social-provider-mark {
+  height: 23px;
+  width: 23px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  font-size: 14px;
+  font-weight: 800;
+  background: #fff;
+  color: #202127;
+}
+.google-mark {
+  color: #4285f4;
+}
+.apple-mark {
+  background: #e9eaf0;
+  color: #12141a;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #a4a7af;
+  font-size: 14px;
+  margin: 2px 0;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #343741;
 }
 .settings-auth-form > input {
   width: 100%;
@@ -2450,6 +2500,10 @@ a {
   line-height: 1.5;
   margin-top: 7px;
 }
+.settings-auth-form > .auth-helper {
+  color: #a4a7af;
+  margin-top: 7px;
+}
 .setup-hint {
   margin-top: auto;
   border-top: 1px solid #2c2f38;
@@ -2462,3 +2516,4 @@ a {
   color: #d0c1ff;
   font-size: 14px;
 }
+

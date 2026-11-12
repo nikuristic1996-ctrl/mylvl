@@ -1462,6 +1462,7 @@ function SettingsPage({
   const configured = Boolean(supabase);
   const [email, setEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const installApp = async () => {
     if (appInstalled) return;
@@ -1480,18 +1481,44 @@ function SettingsPage({
   const requestSignIn = async (event: FormEvent) => {
     event.preventDefault();
     if (!supabase) return;
+    setAuthBusy(true);
+    setAuthMessage("");
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: window.location.origin },
+        options: {
+          emailRedirectTo: window.location.origin,
+          shouldCreateUser: true,
+        },
       });
       setAuthMessage(
-        error ? error.message : "Check your email for a secure sign-in link.",
+        error
+          ? error.message
+          : "Check your email for a secure link to create your account or sign in.",
       );
     } catch (error) {
       setAuthMessage(
         error instanceof Error ? error.message : "Could not send sign-in link.",
       );
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+  const signInWithProvider = async (provider: "google" | "apple") => {
+    if (!supabase) return;
+    setAuthBusy(true);
+    setAuthMessage("");
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) setAuthMessage(error.message);
+    } catch (error) {
+      setAuthMessage(
+        error instanceof Error ? error.message : `Could not start ${provider} sign-in.`,
+      );
+      setAuthBusy(false);
     }
   };
   const signOut = async () => {
@@ -1550,20 +1577,45 @@ function SettingsPage({
                 Sign out <ArrowRight size={15} />
               </button>
             ) : (
-              <form className="settings-auth-form" onSubmit={requestSignIn}>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@example.com"
-                  aria-label="Email address"
-                />
-                <button className="secondary-button" type="submit">
-                  Email me a sign-in link <ArrowRight size={15} />
+              <div className="settings-auth-options">
+                <button
+                  className="secondary-button social-auth-button"
+                  type="button"
+                  disabled={authBusy}
+                  onClick={() => void signInWithProvider("google")}
+                >
+                  <span className="social-provider-mark google-mark" aria-hidden="true">G</span>
+                  Continue with Google
+                  <ArrowRight size={15} />
                 </button>
-                {authMessage && <small>{authMessage}</small>}
-              </form>
+                <button
+                  className="secondary-button social-auth-button"
+                  type="button"
+                  disabled={authBusy}
+                  onClick={() => void signInWithProvider("apple")}
+                >
+                  <span className="social-provider-mark apple-mark" aria-hidden="true">A</span>
+                  Continue with Apple
+                  <ArrowRight size={15} />
+                </button>
+                <div className="auth-divider"><span>or use email</span></div>
+                <form className="settings-auth-form" onSubmit={requestSignIn}>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    aria-label="Email address"
+                  />
+                  <button className="secondary-button" type="submit" disabled={authBusy}>
+                    {authBusy ? "Sending…" : "Email me a sign-in link"}
+                    <ArrowRight size={15} />
+                  </button>
+                  <small className="auth-helper">New accounts are created when you use your email link.</small>
+                  {authMessage && <small role="status">{authMessage}</small>}
+                </form>
+              </div>
             )
           ) : (
             <div className="setup-hint">
@@ -1832,3 +1884,4 @@ function ActivityModal({
     </div>
   );
 }
+
