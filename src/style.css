@@ -1844,6 +1844,43 @@ a {
   cursor: default;
   color: #9b9da4;
 }
+.ocr-failure,
+.ocr-partial,
+.ocr-success,
+.ocr-phase {
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ocr-failure {
+  display: grid;
+  gap: 10px;
+  color: #ffc2c2;
+  background: #3a2024;
+  border: 1px solid #824047;
+}
+.ocr-failure .secondary-button {
+  margin-top: 0;
+  justify-content: center;
+  color: #f2e9e8;
+  border-color: #824047;
+}
+.ocr-partial {
+  color: #ffe1a6;
+  background: #30291c;
+  border: 1px solid #66512c;
+}
+.ocr-success {
+  color: #d8f8b1;
+  background: #202d20;
+  border: 1px solid #45653c;
+}
+.ocr-phase {
+  color: #c4d6ef;
+  background: #1b2432;
+  border: 1px solid #344960;
+}
 .settings-footnote {
   font-size: 14px;
   color: #a0a4ae;
