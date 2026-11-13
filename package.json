@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
+    "test": "node --experimental-strip-types --test",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
@@ -28,3 +29,4 @@
     "vite-plugin-pwa": "^0.21.1"
   }
 }
+
