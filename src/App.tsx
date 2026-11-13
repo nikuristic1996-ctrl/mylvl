@@ -1295,6 +1295,7 @@ function Milestone({
 }
 
 type ImportDraft = ScreenshotDraft;
+type OcrWorkflowStatus = "idle" | "loading" | "recognizing" | "success" | "partial" | "failed" | "manual";
 const fieldLabels: Record<string, string> = {
   type: "activity type", date: "activity date", time: "start time", duration: "duration", distance: "distance", sourceApp: "source app",
   pace: "average pace", heartRate: "average heart rate",
@@ -1342,6 +1343,9 @@ function ImportPage({
   const [preview, setPreview] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [draft, setDraft] = useState<ImportDraft | null>(null);
+  const [ocrState, setOcrState] = useState<OcrWorkflowStatus>("idle");
+  const [ocrError, setOcrError] = useState("");
+  const [ocrPhase, setOcrPhase] = useState("");
   const [status, setStatus] = useState("");
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrConfidence, setOcrConfidence] = useState<number | null>(null);
@@ -1353,6 +1357,9 @@ function ImportPage({
     if (!picked) return;
     setFile(picked);
     setDraft(null);
+    setOcrState("idle");
+    setOcrError("");
+    setOcrPhase("");
     setOcrConfidence(null);
     setOcrRawText("");
     setOcrLanguages("");
@@ -1365,10 +1372,19 @@ function ImportPage({
   const analyze = async () => {
     if (!file) return;
     setAnalyzing(true);
+    setDraft(null);
+    setOcrReport(null);
+    setOcrRawText("");
+    setOcrConfidence(null);
+    setOcrError("");
+    setOcrState("loading");
+    setOcrPhase("Loading OCR engine");
     setStatus("");
     try {
       const result = await recognizeScreenshot(file, (phase, progress) => {
-        setStatus(`${phase} · ${Math.round(progress * 100)}%`);
+        setOcrPhase(phase);
+        setOcrState(phase === "Loading OCR engine" ? "loading" : "recognizing");
+        setStatus(phase + " · " + Math.round(progress * 100) + "%");
         setOcrProgress(progress);
       });
       setDraft(result.draft);
@@ -1376,16 +1392,16 @@ function ImportPage({
       setOcrRawText(result.rawText);
       setOcrLanguages(result.languages);
       setOcrReport(result.report);
-      setStatus(result.confidence < 60
-        ? "The text was difficult to read. Please check every field carefully."
-        : "Text read locally in this browser. Please review the highlighted fields.");
+      const hasRequiredFields = Boolean(result.draft.date && result.draft.time && result.draft.duration
+        && (!["Running", "Cycling", "Swimming"].includes(result.draft.type) || result.draft.distance));
+      const complete = hasRequiredFields && result.draft.uncertain.length === 0
+        && result.confidence >= 60 && result.rawText.trim().length > 0;
+      setOcrState(complete ? "success" : "partial");
+      setStatus("");
     } catch (error) {
-      setStatus(
-        error instanceof Error
-          ? error.message
-          : "Could not read this image. You can still enter the details manually.",
-      );
-      setDraft({ type: "Other", date: "", time: "", duration: "", distance: "", pace: "", heartRate: "", calories: "", elevation: "", steps: "", sourceApp: "Unknown", notes: "", uncertain: ["type", "date", "duration", "distance"] });
+      setOcrError(error instanceof Error ? error.message : "The OCR engine could not read this image.");
+      setOcrState("failed");
+      setStatus("");
       setOcrRawText("");
       setOcrLanguages("");
       setOcrReport(null);
@@ -1439,6 +1455,7 @@ function ImportPage({
     };
     if (await addActivity(activity)) {
       setStatus("Activity confirmed and sent securely. MYLVL has refreshed your progression.");
+      setOcrState("idle");
       setFile(null);
       setDraft(null);
       URL.revokeObjectURL(preview);
@@ -1504,8 +1521,11 @@ function ImportPage({
                   </span>
                   {draft && (
                     <div className="analyzed-note">
-                      <Check size={13} /> Details extracted — check everything
-                      below
+                      <Check size={13} /> {ocrState === "manual"
+                        ? "Manual entry mode — enter the activity details below."
+                        : ocrState === "success"
+                          ? "Extraction successful — review every field before confirming."
+                          : "Partial extraction — review highlighted fields or enter missing values."}
                     </div>
                   )}
                 </div>
@@ -1515,6 +1535,13 @@ function ImportPage({
                   onClick={() => {
                     setFile(null);
                     setDraft(null);
+                    setOcrState("idle");
+                    setOcrError("");
+                    setOcrPhase("");
+                    setOcrConfidence(null);
+                    setOcrRawText("");
+                    setOcrLanguages("");
+                    setOcrReport(null);
                     URL.revokeObjectURL(preview);
                     setPreview("");
                   }}
@@ -1531,15 +1558,33 @@ function ImportPage({
               >
                 {analyzing ? (
                   <>
-                    <span className="spinner" /> Reading your screenshot… {Math.round(ocrProgress * 100)}%
+                    <span className="spinner" /> {ocrPhase || "Loading OCR engine"}… {Math.round(ocrProgress * 100)}%
                   </>
                 ) : (
                   <>
-                    <Sparkles size={16} /> Analyze screenshot
+                    <Sparkles size={16} /> {ocrState === "failed" ? "Retry OCR" : "Analyze screenshot"}
                   </>
                 )}
               </button>
             )}
+            {ocrState === "failed" && (
+              <div className="ocr-failure" role="alert">
+                <b>OCR failed.</b> {ocrError || "The screenshot could not be analyzed."}
+                {file && !draft && (
+                  <button className="secondary-button" type="button" onClick={() => {
+                    setDraft({ type: "Other", date: "", time: "", duration: "", distance: "", pace: "", heartRate: "", calories: "", elevation: "", steps: "", sourceApp: "Unknown", notes: "", uncertain: ["type", "date", "time", "duration", "distance", "sourceApp"] });
+                    setOcrState("manual");
+                    setOcrError("");
+                  }}>
+                    Enter details manually
+                  </button>
+                )}
+              </div>
+            )}
+            {ocrState === "loading" && <p className="ocr-phase" role="status">Loading OCR engine…</p>}
+            {ocrState === "recognizing" && <p className="ocr-phase" role="status">Recognizing screenshot…</p>}
+            {ocrState === "partial" && <p className="ocr-partial" role="status">Partial extraction — review the fields below. Missing values have not been filled in.</p>}
+            {ocrState === "success" && <p className="ocr-success" role="status">Extraction successful. Review every field before confirming.</p>}
             {status && (
               <p
                 className={`inline-status${status.startsWith("Activity confirmed") ? " success" : ""}`}
