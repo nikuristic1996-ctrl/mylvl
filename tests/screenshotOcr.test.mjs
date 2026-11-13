@@ -175,3 +175,13 @@ test("unlabeled ambiguous metrics remain blank and impossible values are rejecte
   assert.equal(invalid.duration, "");
   assert.equal(invalid.heartRate, "");
 });
+
+
+test("extracts cadence and moving time with explicit step units for running estimates", () => {
+  const parsed = parseActivityScreenshot("Garmin · Laufbandtraining · Distanz 6,34 km · Bewegungszeit 42:00 · Durchschnittspace 7:00 min/km · Schrittfrequenz 160 spm");
+  assert.equal(parsed.type, "Running");
+  assert.equal(parsed.distance, "6.34");
+  assert.equal(parsed.cadence, "160");
+  assert.equal(parsed.cadenceUnit, "steps/min");
+  assert.equal(parsed.movingDurationMinutes, "42");
+});
