@@ -12,6 +12,11 @@ test("resolves a direct Tesseract ESM named export", () => {
   assert.equal(resolveTesseractApi({ createWorker }).createWorker, createWorker);
 });
 
+test("resolves the Tesseract global export used by the documented browser build", () => {
+  const createWorker = async () => ({ recognize() {}, setParameters() {}, terminate() {} });
+  assert.equal(resolveTesseractApi({ createWorker }).createWorker, createWorker);
+});
+
 test("reports a clear error for an incompatible Tesseract module", () => {
   assert.throws(() => resolveTesseractApi({ default: {} }), /without a usable createWorker export/);
 });
@@ -132,6 +137,20 @@ test("Runna mixed German and English converts miles but retains min-per-mile pac
   assert.equal(parsed.draft.elevation, "38");
 });
 
+test("Garmin German treadmill OCR tolerates metric labels after their values", () => {
+  const raw = "15:59 m BN Ree & Laufbandtraining : Übersicht Statistiken Intervalle Diagramme A A] 12. Nov. @ 19:04 a W 1 Do. Tempo - Tempo 2-1-1 (6k # Notizen hinzufügen 6,34 km Distanz 157 bpm @ 7:17 /km @ @ Herzfrequenz @ Pace 45:31 544 Gesamtzeit Gesamtkalorien L&I Foto Teilen Evaluierung Pace (Hoch Aerob) Hauptnutzen Normal Befinden Mäßig Empfundene 3/10 Anstrengung";
+  const parsed = parseActivityScreenshotDetailed(raw);
+  assert.equal(parsed.draft.type, "Running");
+  assert.equal(parsed.draft.distance, "6.34");
+  assert.equal(parsed.draft.pace, "7:17 min/km");
+  assert.equal(parsed.draft.duration, "46");
+  assert.equal(parsed.draft.time, "19:04");
+  assert.equal(parsed.draft.heartRate, "157");
+  assert.equal(parsed.draft.calories, "544");
+  assert.equal(parsed.draft.date, "");
+  assert.ok(parsed.draft.uncertain.includes("calories"));
+});
+
 test("meters are converted to kilometers, while elevation meters are not mistaken for distance", () => {
   assert.equal(parseActivityScreenshot("Walking · Distance 4200 m").distance, "4.2");
   const parsed = parseActivityScreenshotDetailed("Running\nDistance 5 km\nDistance 7 km\nElevation Gain 300 m");
@@ -156,4 +175,3 @@ test("unlabeled ambiguous metrics remain blank and impossible values are rejecte
   assert.equal(invalid.duration, "");
   assert.equal(invalid.heartRate, "");
 });
-
