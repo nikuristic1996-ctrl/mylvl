@@ -46,6 +46,7 @@ import {
 } from "./domain";
 import { calculateActivityXp, type ActivityType as EngineActivityType } from "./gameEngine";
 import { supabase } from "./supabase";
+import Phase2SmokeTest, { PHASE2_SMOKE_OWNER_ID } from "./Phase2SmokeTest";
 import {
   loadCloudData,
   recordCloudActivity,
@@ -481,8 +482,13 @@ export default function App() {
                   installPrompt={installPrompt}
                   appInstalled={appInstalled}
                   onInstallPromptConsumed={() => setInstallPrompt(null)}
+                  canRunPhase2SmokeTest={userId === PHASE2_SMOKE_OWNER_ID}
                 />
               }
+            />
+            <Route
+              path="/phase2-smoke"
+              element={<Phase2SmokeTest user={session?.user ?? null} />}
             />
             <Route
               path="*"
@@ -1671,12 +1677,14 @@ function SettingsPage({
   installPrompt,
   appInstalled,
   onInstallPromptConsumed,
+  canRunPhase2SmokeTest,
 }: {
   session: Session | null;
   cloudState: "local" | "loading" | "ready" | "error";
   installPrompt: AppInstallPromptEvent | null;
   appInstalled: boolean;
   onInstallPromptConsumed: () => void;
+  canRunPhase2SmokeTest: boolean;
 }) {
   const configured = Boolean(supabase);
   const [email, setEmail] = useState("");
@@ -1895,6 +1903,18 @@ function SettingsPage({
         mylvl is an early access prototype. Integrations are clearly marked
         until a secure provider connection is available.
       </div>
+      {canRunPhase2SmokeTest && (
+        <section className="panel phase2-smoke-settings-link">
+          <div>
+            <div className="eyebrow">TEMPORARY OWNER-ONLY CHECK</div>
+            <h3>Verify Phase 2 in production</h3>
+            <p>Run the marked 6.3 km browser smoke test and remove it safely when finished.</p>
+          </div>
+          <Link className="secondary-button" to="/phase2-smoke">
+            Open test page <ArrowRight size={15} />
+          </Link>
+        </section>
+      )}
       {showInstallGuide && (
         <div
           className="modal-scrim"
