@@ -45,6 +45,7 @@ export type Avatar = {
   hair: string;
   skin: string;
   outfit: string;
+  heightCm?: number;
 };
 export type AppData = { activities: Activity[]; avatar: Avatar };
 
