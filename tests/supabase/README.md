@@ -14,7 +14,7 @@ These tests target only a disposable local Supabase stack. They refuse remote AP
 The production project currently has no migration history because its original schema was applied manually. Do **not** add `schema.sql` as a new production migration. For a clean local stack:
 
 1. From the project root, run `npx supabase start`. The local project ID in `supabase/config.toml` is `mylvl-phase2-local`, deliberately different from production.
-2. Open the local Studio URL printed by the CLI (normally `http://127.0.0.1:54323`). In its SQL Editor, run `supabase/schema.sql` first, then `supabase/migrations/20261113010000_phase_2_secure_progression.sql`.
+2. Open the local Studio URL printed by the CLI (normally `http://127.0.0.1:54323`). In its SQL Editor, run `supabase/schema.sql` first, then `supabase/migrations/20261113011810_phase_2_secure_progression.sql`.
 3. In `supabase/functions/`, copy `.env.example` to `.env.local`. Keep its CORS values for local development; do not place keys in this file in the repository.
 4. In a second terminal, run `npx supabase functions serve award-activity --env-file supabase/functions/.env.local`. The local Supabase runtime supplies its local API keys. If your CLI version requires explicit values, use a temporary env file outside Git with the local `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`, plus the CORS values from `.env.example`.
 5. In another terminal, set test-only values from `npx supabase status -o env` without printing them, then run:

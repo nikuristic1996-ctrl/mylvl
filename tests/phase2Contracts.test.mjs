@@ -4,7 +4,7 @@ import test from "node:test";
 import { finishAward, prepareAward } from "../supabase/functions/_shared/awardService.ts";
 import { normalizeActivityType } from "../supabase/functions/_shared/gameEngine.ts";
 
-const migration = await readFile(new URL("../supabase/migrations/20261113010000_phase_2_secure_progression.sql", import.meta.url), "utf8");
+const migration = await readFile(new URL("../supabase/migrations/20261113011810_phase_2_secure_progression.sql", import.meta.url), "utf8");
 const edge = await readFile(new URL("../supabase/functions/award-activity/index.ts", import.meta.url), "utf8");
 
 test("the server recomputes the award from the reserved activity, not client EXP", () => {
