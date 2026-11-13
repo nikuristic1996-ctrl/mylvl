@@ -424,6 +424,7 @@ export default function App() {
         </header>
         <div className="content-wrap">
           <Routes>
+            <Route path="/ocr-runtime-check" element={<OcrRuntimeCheck />} />
             <Route
               path="/"
               element={
@@ -1295,6 +1296,47 @@ function Milestone({
 }
 
 type ImportDraft = ScreenshotDraft;
+function OcrRuntimeCheck() {
+  const [state, setState] = useState("Ready — this test uses generated text only and does not save an activity.");
+  const [results, setResults] = useState<string[]>([]);
+  const run = async () => {
+    setState("Loading OCR engine and English + German language data…");
+    setResults([]);
+    try {
+      const makeImage = async (text: string) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1600;
+        canvas.height = 280;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas is not available in this browser.");
+        context.fillStyle = "#fff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = "#111";
+        context.font = "bold 54px Arial";
+        context.fillText(text, 24, 155);
+        const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Could not create test image.")), "image/png"));
+        return new File([blob], "ocr-language-check.png", { type: "image/png" });
+      };
+      const samples = ["Running Distance 6.3 km Duration 1:03:00", "Laufen Distanz 6,3 km Dauer 1:03:00"];
+      const observed: string[] = [];
+      for (const sample of samples) {
+        setState("Recognizing generated English and German samples…");
+        const result = await recognizeScreenshot(await makeImage(sample), (phase, progress) => setState(`${phase} ${Math.round(progress * 100)}%`));
+        observed.push(result.rawText);
+      }
+      const checks = [
+        /Running/i.test(observed[0]) && /Distance/i.test(observed[0]) && /6[.,]3\s*km/i.test(observed[0]) && /Duration/i.test(observed[0]),
+        /Laufen/i.test(observed[1]) && /Distanz/i.test(observed[1]) && /6[.,]3\s*km/i.test(observed[1]) && /Dauer/i.test(observed[1]),
+      ];
+      setResults(observed);
+      setState(checks.every(Boolean) ? "PASS — Tesseract initialized and recognized both samples." : "PARTIAL — Tesseract ran; inspect the recognized text below.");
+    } catch (error) {
+      setState("FAILED — " + (error instanceof Error ? error.message : "OCR runtime failed."));
+    }
+  };
+  return <main className="content-wrap"><section className="panel import-panel"><h1>Temporary OCR browser runtime check</h1><p>This test recognizes generated English and German text only. It does not upload or save activity data.</p><button className="primary-button" type="button" onClick={() => void run()}>Run OCR runtime check</button><p role="status">{state}</p>{results.map((result, index) => <pre key={index}>{(index ? "German result\n" : "English result\n") + result}</pre>)}</section></main>;
+}
+
 type OcrWorkflowStatus = "idle" | "loading" | "recognizing" | "success" | "partial" | "failed" | "manual";
 const fieldLabels: Record<string, string> = {
   type: "activity type", date: "activity date", time: "start time", duration: "duration", distance: "distance", sourceApp: "source app",
