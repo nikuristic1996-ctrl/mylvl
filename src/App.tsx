@@ -35,7 +35,6 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  calculateXp,
   formatDate,
   levelForXp,
   loadData,
@@ -45,11 +44,15 @@ import {
   type AppData,
   type Avatar,
 } from "./domain";
+import { calculateActivityXp, type ActivityType as EngineActivityType } from "./gameEngine";
 import { supabase } from "./supabase";
 import {
   loadCloudData,
   recordCloudActivity,
   saveCloudAvatar,
+  type ArchivedSeasonSnapshot,
+  type RecentExperienceTransaction,
+  type SeasonSnapshot,
 } from "./supabaseData";
 
 const nav = [
@@ -71,6 +74,62 @@ const activityTypes: ActivityType[] = [
   "Swimming",
   "Other",
 ];
+const engineActivityType: Partial<Record<ActivityType, EngineActivityType>> = {
+  Walking: "walking",
+  Running: "running",
+  Cycling: "cycling",
+  Swimming: "swimming",
+  Strength: "strength",
+  Yoga: "yoga",
+  Pilates: "pilates",
+  "Push-ups": "pushups",
+  Squats: "squats",
+  "Sit-ups": "situps",
+  Plank: "plank",
+  "Pull-ups": "pullups",
+};
+function activityXpPreview({
+  type,
+  duration,
+  distance,
+  steps,
+  repetitions,
+  holdSeconds,
+  activeCalories,
+  source,
+  confirmed,
+  demo,
+}: {
+  type: ActivityType;
+  duration: number;
+  distance?: number;
+  steps?: number;
+  repetitions?: number;
+  holdSeconds?: number;
+  activeCalories?: number;
+  source: "manual" | "screenshot";
+  confirmed?: boolean;
+  demo?: boolean;
+}) {
+  const ruleType = engineActivityType[type];
+  if (!ruleType) return 0;
+  return calculateActivityXp({
+    type: ruleType,
+    source,
+    demo,
+    screenshotConfirmed: confirmed,
+    recordedSession: source === "manual" ? false : undefined,
+    dailyStepsReconciled: false,
+    metrics: {
+      durationMinutes: duration,
+      distanceKm: distance,
+      steps,
+      repetitions,
+      holdSeconds,
+      activeCalories,
+    },
+  }).xp;
+}
 const days = ["M", "T", "W", "T", "F", "S", "S"];
 const chartBars = [38, 64, 45, 80, 56, 93, 68];
 
@@ -83,6 +142,9 @@ export default function App() {
   const [data, setData] = useState<AppData>(loadData);
   const [session, setSession] = useState<Session | null>(null);
   const [cloudTotalXp, setCloudTotalXp] = useState<number | null>(null);
+  const [cloudSeason, setCloudSeason] = useState<SeasonSnapshot | null>(null);
+  const [seasonHistory, setSeasonHistory] = useState<ArchivedSeasonSnapshot[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<RecentExperienceTransaction[]>([]);
   const [cloudState, setCloudState] = useState<
     "local" | "loading" | "ready" | "error"
   >(supabase ? "loading" : "local");
@@ -135,16 +197,22 @@ export default function App() {
     if (!userId) {
       setData(loadData());
       setCloudTotalXp(null);
+      setCloudSeason(null);
+      setSeasonHistory([]);
+      setRecentTransactions([]);
       setCloudState("local");
       return;
     }
     let active = true;
     setCloudState("loading");
     void loadCloudData(userId)
-      .then(({ data: cloudData, totalXp: xp }) => {
+      .then(({ data: cloudData, totalXp: xp, season, seasonHistory: history, recentTransactions: transactions }) => {
         if (!active) return;
         setData(cloudData);
         setCloudTotalXp(xp);
+        setCloudSeason(season);
+        setSeasonHistory(history);
+        setRecentTransactions(transactions);
         setCloudState("ready");
       })
       .catch((error: unknown) => {
@@ -159,6 +227,9 @@ export default function App() {
           },
         });
         setCloudTotalXp(0);
+        setCloudSeason(null);
+        setSeasonHistory([]);
+        setRecentTransactions([]);
         setCloudState("error");
         setToast(
           error instanceof Error
@@ -178,9 +249,9 @@ export default function App() {
     const timer = setTimeout(() => setToast(""), 3200);
     return () => clearTimeout(timer);
   }, [toast]);
-  const totalXp =
-    cloudTotalXp ??
-    data.activities.reduce((sum, item) => sum + item.xp, 0) + 1240;
+  const totalXp = session
+    ? cloudTotalXp ?? 0
+    : data.activities.reduce((sum, item) => sum + item.xp, 0) + 1240;
   const level = levelForXp(totalXp);
   const addActivity = async (activity: Activity) => {
     if (session && cloudState !== "ready") {
@@ -202,8 +273,22 @@ export default function App() {
           setToast("This activity was already imported.");
           return false;
         }
-        savedActivity = { ...activity, id: result.id, xp: result.xp };
-        setCloudTotalXp((current) => (current ?? 0) + result.xp);
+        const refreshed = await loadCloudData(session.user.id);
+        setData(refreshed.data);
+        setCloudTotalXp(refreshed.totalXp);
+        setCloudSeason(refreshed.season);
+        setSeasonHistory(refreshed.seasonHistory);
+        setRecentTransactions(refreshed.recentTransactions);
+        setToast(
+          result.xp > 0
+            ? `+${result.xp} XP awarded · nice work`
+            : activity.demo
+              ? "Demo activity saved. It earned no EXP."
+              : result.status === "requires_review" || result.status === "requires-review"
+                ? "Activity saved for review; no EXP was awarded."
+                : "Activity saved. This source is not eligible for EXP.",
+        );
+        return true;
       } catch (error) {
         setToast(
           error instanceof Error
@@ -217,7 +302,11 @@ export default function App() {
       ...current,
       activities: [savedActivity, ...current.activities],
     }));
-    setToast(`+${savedActivity.xp} XP earned · nice work`);
+    setToast(
+      savedActivity.xp > 0
+        ? `+${savedActivity.xp} demo EXP · local to this device`
+        : "Activity saved locally without EXP.",
+    );
     return true;
   };
   const updateAvatar = async (avatar: Avatar) => {
@@ -280,8 +369,14 @@ export default function App() {
               <Zap size={16} fill="currentColor" />
             </div>
             <div>
-              <b>Season 01</b>
-              <span>Find your rhythm</span>
+              <b>{cloudSeason?.name ?? "No season scheduled"}</b>
+              <span>
+                {cloudSeason
+                  ? `Level ${cloudSeason.progress.level} · ${cloudSeason.progress.rank}`
+                  : session && cloudState === "loading"
+                    ? "Loading season progress"
+                    : "Waiting for a season schedule"}
+              </span>
             </div>
             <ChevronRight size={16} />
           </div>
@@ -366,6 +461,10 @@ export default function App() {
                   activities={data.activities}
                   totalXp={totalXp}
                   level={level}
+                  season={cloudSeason}
+                  seasonHistory={seasonHistory}
+                  recentTransactions={recentTransactions}
+                  cloudState={cloudState}
                 />
               }
             />
@@ -763,6 +862,7 @@ function ActivityList({ activities }: { activities: Activity[] }) {
             <span>
               {formatDate(item.date)}
               {item.notes ? ` · ${item.notes}` : ""}
+              {item.validationStatus ? ` · ${activityValidationLabel(item.validationStatus)}` : ""}
             </span>
           </div>
           <div className="activity-metric">
@@ -783,6 +883,19 @@ function ActivityList({ activities }: { activities: Activity[] }) {
       ))}
     </div>
   );
+}
+function activityValidationLabel(status: NonNullable<Activity["validationStatus"]>) {
+  const labels: Record<NonNullable<Activity["validationStatus"]>, string> = {
+    unverified: "Unverified",
+    user_confirmed: "User confirmed",
+    provider_verified: "Provider verified",
+    pose_validated: "Camera checked",
+    pending_review: "Pending review",
+    rejected: "Not eligible for EXP",
+    demo: "Demo only",
+    legacy_unreviewed: "Legacy record",
+  };
+  return labels[status];
 }
 function activityIcon(type: ActivityType) {
   const common = { size: 17, strokeWidth: 1.8 };
@@ -986,10 +1099,18 @@ function ProgressPage({
   activities,
   totalXp,
   level,
+  season,
+  seasonHistory,
+  recentTransactions,
+  cloudState,
 }: {
   activities: Activity[];
   totalXp: number;
   level: ReturnType<typeof levelForXp>;
+  season: SeasonSnapshot | null;
+  seasonHistory: ArchivedSeasonSnapshot[];
+  recentTransactions: RecentExperienceTransaction[];
+  cloudState: "local" | "loading" | "ready" | "error";
 }) {
   const xpThisWeek = activities
     .filter(
@@ -1036,6 +1157,27 @@ function ProgressPage({
           </div>
         </div>
       </div>
+      <section className="panel season-progression-card">
+        <div>
+          <div className="eyebrow">CURRENT SEASON</div>
+          {cloudState === "loading" && !season ? (
+            <p>Loading season progress…</p>
+          ) : cloudState === "error" ? (
+            <p>Season progress could not be loaded. Try again after cloud sync recovers.</p>
+          ) : season ? (
+            <>
+              <h2>{season.name}</h2>
+              <p>Level {season.progress.level} · {season.progress.rank} · {season.progress.totalXp.toLocaleString()} seasonal EXP</p>
+              <div className="season-progress-track" aria-label={`${season.progress.currentXp} of ${season.progress.neededXp} EXP in current season level`}>
+                <i style={{ width: `${Math.min(100, (season.progress.currentXp / season.progress.neededXp) * 100)}%` }} />
+              </div>
+              <small>{season.progress.capped ? "Season level cap reached" : `${season.progress.currentXp.toLocaleString()} / ${season.progress.neededXp.toLocaleString()} EXP to next season level`}</small>
+            </>
+          ) : (
+            <p>No season has been scheduled yet. Seasonal progression will appear here once a UTC season window is configured.</p>
+          )}
+        </div>
+      </section>
       <div className="section-heading progress-section">
         <div>
           <h2>Your milestones</h2>
@@ -1065,6 +1207,54 @@ function ProgressPage({
           max={10}
         />
       </div>
+      <div className="section-heading progress-section">
+        <div>
+          <h2>Recent EXP transactions</h2>
+          <p>Server-recorded rewards from your account.</p>
+        </div>
+      </div>
+      {cloudState === "loading" ? (
+        <div className="panel progress-empty-state">Loading your EXP ledger…</div>
+      ) : cloudState === "error" ? (
+        <div className="panel progress-empty-state">The EXP ledger could not be loaded. Check your connection and try again.</div>
+      ) : recentTransactions.length ? (
+        <div className="panel xp-transaction-list">
+          {recentTransactions.map((transaction) => (
+            <div className="xp-transaction-row" key={transaction.id}>
+              <span className="xp-transaction-icon"><Zap size={16} /></span>
+              <span className="xp-transaction-copy">
+                <b>{transaction.type === "step_settlement" ? "Daily steps" : "Activity reward"}</b>
+                <small>{formatDate(transaction.createdAt)}</small>
+              </span>
+              <strong>+{transaction.amount.toLocaleString()} XP</strong>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="panel progress-empty-state">No EXP transactions yet. Eligible, confirmed activities will appear here.</div>
+      )}
+      <div className="section-heading progress-section">
+        <div>
+          <h2>Season history</h2>
+          <p>Completed seasons are archived and never reset permanent EXP.</p>
+        </div>
+      </div>
+      {seasonHistory.length ? (
+        <div className="panel xp-transaction-list">
+          {seasonHistory.map((item) => (
+            <div className="xp-transaction-row" key={item.key}>
+              <span className="xp-transaction-icon season-history-icon"><Flame size={16} /></span>
+              <span className="xp-transaction-copy">
+                <b>{item.name} · {item.progress.rank}</b>
+                <small>{formatDate(item.startsAt)} – {formatDate(item.endsAt)}</small>
+              </span>
+              <strong>{item.progress.totalXp.toLocaleString()} XP · Lv {item.progress.level}</strong>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="panel progress-empty-state">No completed seasons to show yet.</div>
+      )}
     </>
   );
 }
@@ -1121,11 +1311,13 @@ function ImportPage({
   const [preview, setPreview] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [draft, setDraft] = useState<ImportDraft | null>(null);
+  const [demoAnalysis, setDemoAnalysis] = useState(false);
   const [status, setStatus] = useState("");
   const pickFile = (picked?: File) => {
     if (!picked) return;
     setFile(picked);
     setDraft(null);
+    setDemoAnalysis(false);
     setStatus("");
     if (preview) URL.revokeObjectURL(preview);
     setPreview(URL.createObjectURL(picked));
@@ -1138,6 +1330,7 @@ function ImportPage({
       const endpoint = import.meta.env.VITE_ACTIVITY_ANALYSIS_URL;
       let extracted: ImportDraft;
       if (endpoint) {
+        setDemoAnalysis(false);
         const body = new FormData();
         body.append("image", file);
         const response = await fetch(endpoint, { method: "POST", body });
@@ -1154,6 +1347,7 @@ function ImportPage({
           notes: result.notes ?? "",
         };
       } else {
+        setDemoAnalysis(true);
         await new Promise((resolve) => setTimeout(resolve, 900));
         extracted = {
           type: "Running",
@@ -1167,6 +1361,7 @@ function ImportPage({
       }
       setDraft(extracted);
     } catch (error) {
+      setDemoAnalysis(false);
       setStatus(
         error instanceof Error
           ? error.message
@@ -1198,12 +1393,28 @@ function ImportPage({
       calories: Number(draft.calories) || undefined,
       steps: Number(draft.steps) || undefined,
       notes: draft.notes,
-      xp: calculateXp(draft.type, Number(draft.duration) || 0),
+      xp: activityXpPreview({
+        type: draft.type,
+        duration: Number(draft.duration) || 0,
+        distance: Number(draft.distance) || undefined,
+        steps: Number(draft.steps) || undefined,
+        source: "screenshot",
+        confirmed: true,
+        demo: demoAnalysis,
+      }),
       source: "screenshot",
       sourceKey: key,
+      demo: demoAnalysis,
+      validationStatus: demoAnalysis ? "demo" : "user_confirmed",
     };
     if (await addActivity(activity)) {
-      setStatus("Activity confirmed and XP awarded.");
+      setStatus(
+        demoAnalysis
+          ? "Demo preview saved. Mock activity data does not earn EXP."
+          : activity.xp > 0
+            ? `Activity confirmed. Estimated reward: ${activity.xp} EXP.`
+            : "Activity saved for review; no EXP was awarded.",
+      );
       setFile(null);
       setDraft(null);
       setPreview("");
@@ -1318,7 +1529,15 @@ function ImportPage({
                     <span>Make any edits before confirming.</span>
                   </div>
                   <span className="xp-preview">
-                    +{calculateXp(draft.type, Number(draft.duration) || 0)} XP
+                    +{activityXpPreview({
+                      type: draft.type,
+                      duration: Number(draft.duration) || 0,
+                      distance: Number(draft.distance) || undefined,
+                      steps: Number(draft.steps) || undefined,
+                      source: "screenshot",
+                      confirmed: true,
+                      demo: demoAnalysis,
+                    })} XP
                   </span>
                 </div>
                 <div className="form-grid">
@@ -1770,8 +1989,14 @@ function ActivityModal({
       distance: Number(distance) || undefined,
       calories: Number(calories) || undefined,
       notes,
-      xp: calculateXp(type, Number(duration)),
+      xp: activityXpPreview({
+        type,
+        duration: Number(duration) || 0,
+        distance: Number(distance) || undefined,
+        source: "manual",
+      }),
       source: "manual",
+      validationStatus: "unverified",
     });
   };
   return (
@@ -1863,9 +2088,16 @@ function ActivityModal({
           </div>
           <span>
             <b>Your reward</b>
-            <small>Earned when you save this activity</small>
+            <small>Manual logs are saved without EXP.</small>
           </span>
-          <strong>+{calculateXp(type, Number(duration) || 0)} XP</strong>
+          <strong>
+            +{activityXpPreview({
+              type,
+              duration: Number(duration) || 0,
+              distance: Number(distance) || undefined,
+              source: "manual",
+            })} XP
+          </strong>
         </div>
         <button className="primary-button modal-submit" type="submit">
           <Check size={16} /> Save activity

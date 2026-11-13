@@ -2508,6 +2508,93 @@ a {
   line-height: 1.5;
   color: #a4a7af;
 }
+.season-progression-card {
+  max-width: 900px;
+  margin-top: 14px;
+  padding: 20px 22px;
+}
+.season-progression-card h2 {
+  margin: 8px 0 4px;
+  font-size: 20px;
+}
+.season-progression-card p {
+  margin: 5px 0 11px;
+  color: #b0b4be;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.season-progression-card small {
+  display: block;
+  color: #a4a7af;
+  font-size: 14px;
+  margin-top: 7px;
+}
+.season-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #292d36;
+}
+.season-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #9ed653, #c4ff78);
+}
+.xp-transaction-list {
+  max-width: 900px;
+  overflow: hidden;
+}
+.xp-transaction-row {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 15px;
+  border-bottom: 1px solid #292d36;
+}
+.xp-transaction-row:last-child {
+  border-bottom: 0;
+}
+.xp-transaction-icon {
+  height: 34px;
+  width: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #b7f56a16;
+  color: var(--lime);
+}
+.season-history-icon {
+  background: #a893ff18;
+  color: var(--purple);
+}
+.xp-transaction-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 3px;
+}
+.xp-transaction-copy b {
+  font-size: 15px;
+}
+.xp-transaction-copy small {
+  color: #a4a7af;
+  font-size: 13px;
+}
+.xp-transaction-row > strong {
+  color: var(--lime);
+  font-size: 15px;
+  text-align: right;
+}
+.progress-empty-state {
+  max-width: 900px;
+  padding: 17px 18px;
+  color: #b0b4be;
+  font-size: 15px;
+  line-height: 1.5;
+}
 .setup-hint code {
   color: #d0c1ff;
   font-size: 14px;

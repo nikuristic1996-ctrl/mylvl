@@ -1,0 +1,5 @@
+project_id = "mylvl-phase2-local"
+
+[functions.award-activity]
+verify_jwt = true
+

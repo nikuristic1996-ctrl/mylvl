@@ -1,3 +1,5 @@
+import { permanentProgressForXp } from "./gameEngine";
+
 export type ActivityType =
   | "Walking"
   | "Running"
@@ -7,7 +9,21 @@ export type ActivityType =
   | "Pilates"
   | "Cycling"
   | "Swimming"
-  | "Other";
+  | "Other"
+  | "Push-ups"
+  | "Squats"
+  | "Sit-ups"
+  | "Plank"
+  | "Pull-ups";
+export type ActivityValidationStatus =
+  | "unverified"
+  | "user_confirmed"
+  | "provider_verified"
+  | "pose_validated"
+  | "pending_review"
+  | "rejected"
+  | "demo"
+  | "legacy_unreviewed";
 export type Activity = {
   id: string;
   type: ActivityType;
@@ -21,6 +37,8 @@ export type Activity = {
   xp: number;
   source: "manual" | "screenshot" | "provider";
   sourceKey?: string;
+  validationStatus?: ActivityValidationStatus;
+  demo?: boolean;
 };
 export type Avatar = {
   name: string;
@@ -30,34 +48,9 @@ export type Avatar = {
 };
 export type AppData = { activities: Activity[]; avatar: Avatar };
 
-export const XP_RULES: Record<
-  ActivityType,
-  { base: number; perMinute: number }
-> = {
-  Walking: { base: 12, perMinute: 1.1 },
-  Running: { base: 25, perMinute: 2.1 },
-  Strength: { base: 22, perMinute: 1.7 },
-  Bodyweight: { base: 16, perMinute: 1.5 },
-  Yoga: { base: 14, perMinute: 1.2 },
-  Pilates: { base: 16, perMinute: 1.3 },
-  Cycling: { base: 20, perMinute: 1.6 },
-  Swimming: { base: 24, perMinute: 1.9 },
-  Other: { base: 10, perMinute: 1 },
-};
-export function calculateXp(type: ActivityType, duration: number) {
-  const rule = XP_RULES[type];
-  return Math.round(rule.base + Math.max(0, duration) * rule.perMinute);
-}
 export function levelForXp(xp: number) {
-  let level = 1,
-    remaining = Math.max(0, xp),
-    needed = 250;
-  while (remaining >= needed) {
-    remaining -= needed;
-    level += 1;
-    needed = Math.round(250 + level * 85);
-  }
-  return { level, current: remaining, needed, total: xp };
+  const progress = permanentProgressForXp(xp);
+  return { ...progress, total: progress.totalXp };
 }
 export const starterActivities: Activity[] = [
   {
@@ -132,3 +125,4 @@ export function formatDate(value: string) {
     day: "numeric",
   }).format(new Date(value));
 }
+

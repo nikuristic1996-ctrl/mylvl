@@ -164,6 +164,8 @@ test("permanent levels match the specified cumulative thresholds and preserve li
     currentXp: 0,
     neededXp: 950,
     nextLevelXp: 7250,
+    current: 0,
+    needed: 950,
   });
   assert.equal(permanentProgressForXp(-3).level, 1);
 });
