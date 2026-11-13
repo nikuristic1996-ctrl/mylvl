@@ -47,6 +47,7 @@ import {
 import { calculateActivityXp, type ActivityType as EngineActivityType } from "./gameEngine";
 import { supabase } from "./supabase";
 import { fingerprintScreenshot, parseLocalizedNumber, recognizeScreenshot, screenshotFileError, type ScreenshotDraft, type ScreenshotParseReport } from "./screenshotOcr";
+import { estimateRunningSteps } from "./stepEstimation";
 import {
   loadCloudData,
   recordCloudActivity,
@@ -489,7 +490,7 @@ export default function App() {
             />
             <Route
               path="/import"
-              element={<ImportPage addActivity={addActivity} userId={userId} activities={data.activities} />}
+              element={<ImportPage addActivity={addActivity} userId={userId} activities={data.activities} heightCm={data.avatar.heightCm} />}
             />
             <Route
               path="/settings"
@@ -994,6 +995,10 @@ function AvatarPage({
             />
           </label>
           <label className="field-label">
+            Height for step estimates (cm, optional)
+            <input type="number" min="120" max="220" value={draft.heightCm ?? ""} onChange={(e) => setDraft({ ...draft, heightCm: e.target.value ? Number(e.target.value) : undefined })} />
+          </label>
+          <label className="field-label">
             Hair color
             <div className="swatch-row">
               {[
@@ -1352,10 +1357,12 @@ function ImportPage({
   addActivity,
   userId,
   activities,
+  heightCm,
 }: {
   addActivity: (activity: Activity) => Promise<boolean>;
   userId: string | null;
   activities: Activity[];
+  heightCm?: number;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
@@ -1371,10 +1378,20 @@ function ImportPage({
   const [ocrLanguages, setOcrLanguages] = useState("");
   const [ocrReport, setOcrReport] = useState<ScreenshotParseReport | null>(null);
   const [possibleDuplicate, setPossibleDuplicate] = useState<Activity | null>(null);
+  const [stepSource, setStepSource] = useState<"measured" | "estimated" | "manual" | null>(null);
+  const stepEstimate = draft ? estimateRunningSteps({
+    type: draft.type, distanceKm: parseLocalizedNumber(draft.distance), pace: draft.pace, heightCm,
+    measuredSteps: stepSource === "measured" ? parseLocalizedNumber(draft.steps) : undefined,
+    cadence: parseLocalizedNumber(draft.cadence ?? ""), cadenceUnit: draft.cadenceUnit,
+    movingDurationMinutes: parseLocalizedNumber(draft.movingDurationMinutes ?? ""), activities,
+  }) : null;
+  const displayedSteps = draft ? stepSource === "measured" || stepSource === "manual" ? draft.steps : String(stepEstimate?.steps ?? draft.steps ?? "") : "";
+  const effectiveStepSource = stepSource ?? (stepEstimate?.steps !== null && stepEstimate?.steps !== undefined ? "estimated" : null);
   const pickFile = (picked?: File) => {
     if (!picked) return;
     setFile(picked);
     setDraft(null);
+    setStepSource(null);
     setOcrState("idle");
     setOcrError("");
     setOcrPhase("");
@@ -1391,6 +1408,7 @@ function ImportPage({
     if (!file) return;
     setAnalyzing(true);
     setDraft(null);
+    setStepSource(null);
     setOcrReport(null);
     setOcrRawText("");
     setOcrConfidence(null);
@@ -1405,6 +1423,13 @@ function ImportPage({
         setStatus(phase + " · " + Math.round(progress * 100) + "%");
         setOcrProgress(progress);
       });
+      const parsedSteps = parseLocalizedNumber(result.draft.steps);
+      const initialEstimate = estimateRunningSteps({
+        type: result.draft.type, distanceKm: parseLocalizedNumber(result.draft.distance), pace: result.draft.pace,
+        heightCm, measuredSteps: parsedSteps, cadence: parseLocalizedNumber(result.draft.cadence ?? ""),
+        cadenceUnit: result.draft.cadenceUnit, movingDurationMinutes: parseLocalizedNumber(result.draft.movingDurationMinutes ?? ""), activities,
+      });
+      setStepSource(parsedSteps !== undefined ? "measured" : initialEstimate.steps !== null ? "estimated" : null);
       setDraft(result.draft);
       setOcrConfidence(result.confidence);
       setOcrRawText(result.rawText);
@@ -1443,7 +1468,8 @@ function ImportPage({
     const durationValue = parseLocalizedNumber(draft.duration);
     const distanceValue = parseLocalizedNumber(draft.distance);
     const calorieValue = parseLocalizedNumber(draft.calories);
-    const stepsValue = parseLocalizedNumber(draft.steps);
+    const stepsValue = effectiveStepSource === "measured" || effectiveStepSource === "manual"
+      ? parseLocalizedNumber(draft.steps) : stepEstimate?.steps ?? parseLocalizedNumber(draft.steps);
     if (durationValue === undefined || durationValue <= 0 || ((draft.type === "Running" || draft.type === "Cycling" || draft.type === "Swimming") && (distanceValue === undefined || distanceValue <= 0))) {
       setStatus("Enter a valid duration and, for distance activities, a valid distance.");
       return;
@@ -1469,13 +1495,16 @@ function ImportPage({
       source: "screenshot",
       sourceKey,
       validationStatus: "user_confirmed",
-      notes: [draft.sourceApp !== "Unknown" ? "Screenshot source: " + draft.sourceApp : "Screenshot import", draft.pace ? "Pace " + draft.pace : "", draft.heartRate ? "Average heart rate " + draft.heartRate + " bpm" : "", draft.elevation ? "Elevation " + draft.elevation + " m" : "", draft.notes].filter(Boolean).join(" · ").slice(0, 500),
+      notes: [draft.sourceApp !== "Unknown" ? "Screenshot source: " + draft.sourceApp : "Screenshot import", draft.pace ? "Pace " + draft.pace : "", draft.heartRate ? "Average heart rate " + draft.heartRate + " bpm" : "",
+        stepsValue !== undefined ? effectiveStepSource === "measured" ? "Steps source: measured" : effectiveStepSource === "estimated" ? "Steps source: estimated (" + (stepEstimate?.method ?? "pace") + (stepEstimate?.stepLengthMeters ? ", step length " + stepEstimate.stepLengthMeters + " m" : "") + ")" : "Steps source: manually entered" : "",
+        draft.notes].filter(Boolean).join(" · ").slice(0, 500),
     };
     if (await addActivity(activity)) {
       setStatus("Activity confirmed and sent securely. MYLVL has refreshed your progression.");
       setOcrState("idle");
       setFile(null);
       setDraft(null);
+      setStepSource(null);
       URL.revokeObjectURL(preview);
       setPreview("");
     }
@@ -1591,6 +1620,7 @@ function ImportPage({
                 {file && !draft && (
                   <button className="secondary-button" type="button" onClick={() => {
                     setDraft({ type: "Other", date: "", time: "", duration: "", distance: "", pace: "", heartRate: "", calories: "", elevation: "", steps: "", sourceApp: "Unknown", notes: "", uncertain: ["type", "date", "time", "duration", "distance", "sourceApp"] });
+                    setStepSource(null);
                     setOcrState("manual");
                     setOcrError("");
                   }}>
@@ -1628,13 +1658,13 @@ function ImportPage({
                       <p><b>OCR languages:</b> {ocrLanguages || "English (eng) + German (deu)"}</p>
                       <p><b>Parser match score:</b> this is a label/context heuristic; the OCR engine score is shown above.</p>
                       <ul className="ocr-confidence-list">
-                        {Object.entries(ocrReport.fieldConfidence).map(([field, value]) => (
+                        {Object.entries(ocrReport.fieldConfidence).filter(([field]) => field !== "elevation").map(([field, value]) => (
                           <li key={field}><span>{fieldLabels[field] ?? field}</span><span>{value === null ? "No reliable match" : value + "%"} · {ocrReport.fieldSources[field] || "no label"}</span></li>
                         ))}
                       </ul>
                       {ocrReport.warnings.length > 0 && <><b>Warnings</b><ul>{ocrReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></>}
                       <b>Parsed fields</b>
-                      <pre>{JSON.stringify(draft, null, 2)}</pre>
+                      <pre>{JSON.stringify(Object.fromEntries(Object.entries(draft).filter(([field]) => field !== "elevation")), null, 2)}</pre>
                       <b>Raw recognized text</b>
                       <pre>{ocrRawText || "No text recognized."}</pre>
                     </div>
@@ -1697,17 +1727,18 @@ function ImportPage({
                     />
                   </label>
                   <label className="field-label">
-                    Elevation gain (m)
-                    <input type="number" min="0" value={draft.elevation} onChange={(e) => update("elevation", e.target.value)} />
-                  </label>
-                  <label className="field-label">
-                    Steps
+                    {effectiveStepSource === "measured" ? "Measured steps" : effectiveStepSource === "estimated" ? "Estimated steps" : "Steps"}
                     <input
                       type="number"
                       min="0"
-                      value={draft.steps}
-                      onChange={(e) => update("steps", e.target.value)}
+                      value={displayedSteps}
+                      onChange={(e) => {
+                        update("steps", e.target.value);
+                        if (effectiveStepSource === "estimated") setStepSource("manual");
+                      }}
                     />
+                    {effectiveStepSource === "estimated" && <small>Estimated only; this does not add EXP. Method: {stepEstimate?.method === "cadence" ? "cadence × moving time" : stepEstimate?.method === "personalized" ? "your verified runs" : "distance ÷ estimated step length"}{stepEstimate?.stepLengthMeters ? ` · ${stepEstimate.stepLengthMeters} m per step` : ""}.</small>}
+                    {effectiveStepSource === "manual" && <small>Entered or adjusted manually; running steps add no walking EXP.</small>}
                   </label>
                   <label className="field-label">
                     Average pace
