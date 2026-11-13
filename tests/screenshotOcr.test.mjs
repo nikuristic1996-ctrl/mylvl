@@ -33,7 +33,15 @@ test("flags unknown or missing fields rather than supplying demo values", () => 
   assert.equal(parsed.time, "");
   assert.equal(parsed.duration, "");
   assert.equal(parsed.distance, "");
+  assert.equal(parsed.calories, "");
+  assert.equal(parseLocalizedNumber(""), undefined);
   assert.deepEqual(parsed.uncertain, ["type", "date", "duration", "distance", "sourceApp"]);
+});
+
+test("start time is not mistaken for activity duration", () => {
+  const parsed = parseActivityScreenshot("Run · Start 7:15 AM · 6,3 km");
+  assert.equal(parsed.time, "07:15");
+  assert.equal(parsed.duration, "");
 });
 
 test("normalizes common thousands and decimal separator combinations", () => {

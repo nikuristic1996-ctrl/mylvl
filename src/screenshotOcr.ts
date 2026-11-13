@@ -15,6 +15,7 @@ export type ScreenshotDraft = {
 
 const numberToken = String.raw`(\d{1,3}(?:[ .,'’]\d{3})*(?:[,.]\d+)?)`;
 export const parseLocalizedNumber = (raw: string) => {
+  if (!raw.trim()) return undefined;
   const compact = raw.replace(/[ '’]/g, "");
   const comma = compact.lastIndexOf(",");
   const dot = compact.lastIndexOf(".");
@@ -45,7 +46,7 @@ function parseDate(text: string): string {
 
 function parseDuration(text: string): string {
   const labeled = firstMatch(text, [
-    /(?:duration|elapsed|time|dauer|zeit)\s*[:\-]?\s*(\d{1,2}:\d{2}(?::\d{2})?)/i,
+    /(?:duration|elapsed|total time|moving time|active time|dauer|zeit)\s*[:\-]?\s*(\d{1,2}:\d{2}(?::\d{2})?)/i,
     /(\d{1,2}:\d{2}:\d{2})\s*(?:duration|elapsed|dauer|gesamtzeit)/i,
   ]);
   if (!labeled) return "";
@@ -76,12 +77,14 @@ export function parseActivityScreenshot(text: string): ScreenshotDraft {
   let distance = "";
   if (distanceMatch) {
     const value = parseLocalizedNumber(distanceMatch[1]);
-    const km = /^(mi|mile|miles)$/i.test(distanceMatch[2]) ? value * 1.609344 : value;
-    if (Number.isFinite(km) && km > 0 && km <= 1000) distance = String(Math.round(km * 1000) / 1000);
+    if (value !== undefined) {
+      const km = /^(mi|mile|miles)$/i.test(distanceMatch[2]) ? value * 1.609344 : value;
+      if (Number.isFinite(km) && km > 0 && km <= 1000) distance = String(Math.round(km * 1000) / 1000);
+    }
   }
   const date = parseDate(clean);
   const timeMatch = firstMatch(clean, [
-    /(?:start(?:ed)?|startzeit|began|time of day|uhrzeit)\s*[:\-]?\s*(\d{1,2}:\d{2})(?:\s*(am|pm))?/i,
+    /(?:start(?:ed)?(?:\s*time)?|startzeit|began|time of day|uhrzeit)\s*[:\-]?\s*(\d{1,2}:\d{2})(?:\s*(am|pm))?/i,
     /\b(\d{1,2}:\d{2})\s*(am|pm)\b/i,
   ]);
   let time = timeMatch?.[1] ?? "";
@@ -98,8 +101,8 @@ export function parseActivityScreenshot(text: string): ScreenshotDraft {
   const hrMatch = firstMatch(clean, [/(?:avg(?:erage)?\s*(?:heart\s*rate|hr)|heart\s*rate|puls|herzfrequenz)\s*[:\-]?\s*(\d{2,3})\s*(?:bpm|schl\s*\/\s*min)?/i]);
   const calorieMatch = firstMatch(clean, [new RegExp(String.raw`(?:calories|kcal|kalorien)\s*[:\-]?\s*${numberToken}`, "i"), new RegExp(String.raw`${numberToken}\s*(?:kcal|calories|kalorien)\b`, "i")]);
   const stepsMatch = firstMatch(clean, [new RegExp(String.raw`(?:steps|schritte)\s*[:\-]?\s*${numberToken}`, "i")]);
-  const caloriesValue = calorieMatch ? parseLocalizedNumber(calorieMatch[1]) : NaN;
-  const stepsValue = stepsMatch ? parseLocalizedNumber(stepsMatch[1]) : NaN;
+  const caloriesValue = calorieMatch ? parseLocalizedNumber(calorieMatch[1]) : undefined;
+  const stepsValue = stepsMatch ? parseLocalizedNumber(stepsMatch[1]) : undefined;
   const uncertain = [
     ...(type === "Other" ? ["type"] : []),
     ...(!date ? ["date"] : []),
@@ -115,8 +118,8 @@ export function parseActivityScreenshot(text: string): ScreenshotDraft {
     distance,
     pace: paceMatch?.[1] ?? "",
     heartRate: hrMatch?.[1] ?? "",
-    calories: Number.isFinite(caloriesValue) ? String(Math.round(caloriesValue)) : "",
-    steps: Number.isFinite(stepsValue) ? String(Math.round(stepsValue)) : "",
+    calories: caloriesValue !== undefined && Number.isFinite(caloriesValue) ? String(Math.round(caloriesValue)) : "",
+    steps: stepsValue !== undefined && Number.isFinite(stepsValue) ? String(Math.round(stepsValue)) : "",
     sourceApp,
     notes: "",
     uncertain,
