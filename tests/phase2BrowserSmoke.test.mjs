@@ -24,7 +24,8 @@ test("browser smoke page gates visibility to the single MYLVL owner id", () => {
 
 test("test verifies duplicate, CORS, database rows, and real app progression values", () => {
   assert.match(page, /method: "OPTIONS"/);
-  assert.match(page, /allowedOrigin === window\.location\.origin/);
+  assert.match(page, /cross-origin fetch resolved, so the browser accepted CORS/);
+  assert.match(page, /Access-Control-Allow-Origin is not a CORS-safelisted response header/);
   assert.match(page, /replayBody\.duplicate === true/);
   assert.match(page, /transactionQuery\.data\[0\]\.exp_amount === 630/);
   assert.match(page, /frontendProgress\.current === 130 && frontendProgress\.needed === 550/);

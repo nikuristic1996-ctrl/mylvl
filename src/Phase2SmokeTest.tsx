@@ -137,12 +137,14 @@ export default function Phase2SmokeTest({ user }: { user: User | null }) {
       };
 
       const preflight = await fetch(functionUrl, { method: "OPTIONS", headers: requestHeaders });
-      const allowedOrigin = preflight.headers.get("access-control-allow-origin");
-      const preflightOk = preflight.status === 204 && allowedOrigin === window.location.origin;
+      // Access-Control-Allow-Origin is not a CORS-safelisted response header,
+      // so browsers hide it from JavaScript unless the server exposes it. A
+      // resolved cross-origin fetch proves the browser accepted the CORS grant.
+      const preflightOk = preflight.status === 204;
       append({
         label: "Production CORS preflight",
         ok: preflightOk,
-        detail: `HTTP ${preflight.status}; allowed origin: ${allowedOrigin ?? "missing"}; app origin: ${window.location.origin}`,
+        detail: `HTTP ${preflight.status}; cross-origin fetch resolved, so the browser accepted CORS for ${window.location.origin}.`,
       });
       if (!preflightOk) throw new Error("Production CORS preflight did not authorize this exact Vercel origin; no activity was submitted.");
 
