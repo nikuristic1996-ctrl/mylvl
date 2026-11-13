@@ -46,7 +46,7 @@ import {
 } from "./domain";
 import { calculateActivityXp, type ActivityType as EngineActivityType } from "./gameEngine";
 import { supabase } from "./supabase";
-import Phase2SmokeTest, { PHASE2_SMOKE_OWNER_ID } from "./Phase2SmokeTest";
+import { fingerprintScreenshot, parseLocalizedNumber, recognizeScreenshot, screenshotFileError, type ScreenshotDraft } from "./screenshotOcr";
 import {
   loadCloudData,
   recordCloudActivity,
@@ -471,7 +471,7 @@ export default function App() {
             />
             <Route
               path="/import"
-              element={<ImportPage addActivity={addActivity} />}
+              element={<ImportPage addActivity={addActivity} userId={userId} activities={data.activities} />}
             />
             <Route
               path="/settings"
@@ -482,13 +482,8 @@ export default function App() {
                   installPrompt={installPrompt}
                   appInstalled={appInstalled}
                   onInstallPromptConsumed={() => setInstallPrompt(null)}
-                  canRunPhase2SmokeTest={userId === PHASE2_SMOKE_OWNER_ID}
                 />
               }
-            />
-            <Route
-              path="/phase2-smoke"
-              element={<Phase2SmokeTest user={session?.user ?? null} />}
             />
             <Route
               path="*"
@@ -1299,31 +1294,63 @@ function Milestone({
   );
 }
 
-type ImportDraft = {
-  type: ActivityType;
-  date: string;
-  duration: string;
-  distance: string;
-  calories: string;
-  steps: string;
-  notes: string;
+type ImportDraft = ScreenshotDraft;
+const fieldLabels: Record<string, string> = {
+  type: "activity type", date: "activity date", duration: "duration", distance: "distance", sourceApp: "source app",
 };
+function dateTimeTimeIsFuture(value: Date) { return value.getTime() > Date.now(); }
+function uuidFromHex(hex: string) {
+  const raw = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  return raw;
+}
+function findPossibleDuplicate(items: Activity[], draft: ImportDraft, dateTime: Date): Activity | null {
+  const type = draft.type.toLowerCase();
+  const distance = parseLocalizedNumber(draft.distance);
+  const duration = parseLocalizedNumber(draft.duration);
+  if (distance === undefined || duration === undefined) return null;
+  const localDay = `${dateTime.getFullYear()}-${dateTime.getMonth()}-${dateTime.getDate()}`;
+  return items.find((item) => {
+    if (item.type.toLowerCase() !== type || item.distance === undefined) return false;
+    const existingDate = new Date(item.date);
+    const existingDay = `${existingDate.getFullYear()}-${existingDate.getMonth()}-${existingDate.getDate()}`;
+    return existingDay === localDay
+      && Math.abs(existingDate.getTime() - dateTime.getTime()) <= 3 * 60_000
+      && Math.abs(item.distance - distance) <= 0.05
+      && Math.abs(item.duration - duration) <= 2;
+  }) ?? null;
+}
+function validateAndPick(file: File | undefined, pick: (file?: File) => void, setStatus: (value: string) => void) {
+  if (!file) return;
+  const validationError = screenshotFileError(file);
+  if (validationError) {
+    setStatus(validationError);
+    return;
+  }
+  pick(file);
+}
 function ImportPage({
   addActivity,
+  userId,
+  activities,
 }: {
   addActivity: (activity: Activity) => Promise<boolean>;
+  userId: string | null;
+  activities: Activity[];
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [draft, setDraft] = useState<ImportDraft | null>(null);
-  const [demoAnalysis, setDemoAnalysis] = useState(false);
   const [status, setStatus] = useState("");
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrConfidence, setOcrConfidence] = useState<number | null>(null);
+  const [possibleDuplicate, setPossibleDuplicate] = useState<Activity | null>(null);
   const pickFile = (picked?: File) => {
     if (!picked) return;
     setFile(picked);
     setDraft(null);
-    setDemoAnalysis(false);
+    setOcrConfidence(null);
+    setPossibleDuplicate(null);
     setStatus("");
     if (preview) URL.revokeObjectURL(preview);
     setPreview(URL.createObjectURL(picked));
@@ -1333,55 +1360,22 @@ function ImportPage({
     setAnalyzing(true);
     setStatus("");
     try {
-      const endpoint = import.meta.env.VITE_ACTIVITY_ANALYSIS_URL;
-      let extracted: ImportDraft;
-      if (endpoint) {
-        setDemoAnalysis(false);
-        const body = new FormData();
-        body.append("image", file);
-        const response = await fetch(endpoint, { method: "POST", body });
-        if (!response.ok)
-          throw new Error("Analysis service could not read this image.");
-        const result = (await response.json()) as Partial<ImportDraft>;
-        extracted = {
-          type: result.type ?? "Running",
-          date: result.date ?? new Date().toISOString().slice(0, 10),
-          duration: String(result.duration ?? 32),
-          distance: String(result.distance ?? ""),
-          calories: String(result.calories ?? ""),
-          steps: String(result.steps ?? ""),
-          notes: result.notes ?? "",
-        };
-      } else {
-        setDemoAnalysis(true);
-        await new Promise((resolve) => setTimeout(resolve, 900));
-        extracted = {
-          type: "Running",
-          date: new Date().toISOString().slice(0, 10),
-          duration: "32",
-          distance: "5.2",
-          calories: "412",
-          steps: "",
-          notes: "Detected from screenshot · please review",
-        };
-      }
-      setDraft(extracted);
+      const result = await recognizeScreenshot(file, (phase, progress) => {
+        setStatus(`${phase} · ${Math.round(progress * 100)}%`);
+        setOcrProgress(progress);
+      });
+      setDraft(result.draft);
+      setOcrConfidence(result.confidence);
+      setStatus(result.confidence < 60
+        ? "The text was difficult to read. Please check every field carefully."
+        : "Text read locally in this browser. Please review the highlighted fields.");
     } catch (error) {
-      setDemoAnalysis(false);
       setStatus(
         error instanceof Error
           ? error.message
-          : "Could not analyze this image. You can still log it manually.",
+          : "Could not read this image. You can still enter the details manually.",
       );
-      setDraft({
-        type: "Other",
-        date: new Date().toISOString().slice(0, 10),
-        duration: "30",
-        distance: "",
-        calories: "",
-        steps: "",
-        notes: "",
-      });
+      setDraft({ type: "Other", date: "", time: "", duration: "", distance: "", pace: "", heartRate: "", calories: "", steps: "", sourceApp: "Unknown", notes: "", uncertain: ["type", "date", "duration", "distance"] });
     } finally {
       setAnalyzing(false);
     }
@@ -1389,44 +1383,56 @@ function ImportPage({
   const saveImport = async (event: FormEvent) => {
     event.preventDefault();
     if (!draft || !file) return;
-    const key = `${file.name}:${file.size}:${draft.date}:${draft.type}:${draft.duration}:${draft.distance}`;
+    if (!userId) {
+      setStatus("Sign in first to save a screenshot activity to your account.");
+      return;
+    }
+    const dateTimeLocal = `${draft.date}T${draft.time}`;
+    const dateTime = new Date(dateTimeLocal);
+    if (Number.isNaN(dateTime.getTime()) || dateTimeTimeIsFuture(dateTime)) {
+      setStatus("Please enter a valid activity date and time in the past.");
+      return;
+    }
+    const durationValue = parseLocalizedNumber(draft.duration);
+    const distanceValue = parseLocalizedNumber(draft.distance);
+    const calorieValue = parseLocalizedNumber(draft.calories);
+    const stepsValue = parseLocalizedNumber(draft.steps);
+    if (durationValue === undefined || durationValue <= 0 || ((draft.type === "Running" || draft.type === "Cycling" || draft.type === "Swimming") && (distanceValue === undefined || distanceValue <= 0))) {
+      setStatus("Enter a valid duration and, for distance activities, a valid distance.");
+      return;
+    }
+    const duplicate = possibleDuplicate ?? findPossibleDuplicate(activities, draft, dateTime);
+    if (duplicate) {
+      setPossibleDuplicate(duplicate);
+      setStatus("This looks very similar to an activity already saved. Check your Activities page before importing it again.");
+      return;
+    }
+    const canonical = [draft.type.toLowerCase(), dateTime.toISOString(), durationValue, distanceValue?.toFixed(3) ?? ""].join("|");
+    const key = await fingerprintScreenshot(file, userId, canonical);
+    const sourceKey = `screenshot:${key}`;
     const activity: Activity = {
-      id: crypto.randomUUID(),
+      id: uuidFromHex(key.slice(0, 32)),
       type: draft.type,
-      date: new Date(`${draft.date}T12:00:00`).toISOString(),
-      duration: Number(draft.duration) || 0,
-      distance: Number(draft.distance) || undefined,
-      calories: Number(draft.calories) || undefined,
-      steps: Number(draft.steps) || undefined,
-      notes: draft.notes,
-      xp: activityXpPreview({
-        type: draft.type,
-        duration: Number(draft.duration) || 0,
-        distance: Number(draft.distance) || undefined,
-        steps: Number(draft.steps) || undefined,
-        source: "screenshot",
-        confirmed: true,
-        demo: demoAnalysis,
-      }),
+      date: dateTime.toISOString(),
+      duration: durationValue,
+      distance: distanceValue,
+      calories: calorieValue,
+      steps: stepsValue,
+      xp: 0,
       source: "screenshot",
-      sourceKey: key,
-      demo: demoAnalysis,
-      validationStatus: demoAnalysis ? "demo" : "user_confirmed",
+      sourceKey,
+      validationStatus: "user_confirmed",
+      notes: [draft.sourceApp !== "Unknown" ? `Screenshot source: ${draft.sourceApp}` : "Screenshot import", draft.pace ? `Pace ${draft.pace}/km` : "", draft.heartRate ? `Average heart rate ${draft.heartRate} bpm` : "", draft.notes].filter(Boolean).join(" · ").slice(0, 500),
     };
     if (await addActivity(activity)) {
-      setStatus(
-        demoAnalysis
-          ? "Demo preview saved. Mock activity data does not earn EXP."
-          : activity.xp > 0
-            ? `Activity confirmed. Estimated reward: ${activity.xp} EXP.`
-            : "Activity saved for review; no EXP was awarded.",
-      );
+      setStatus("Activity confirmed and sent securely. MYLVL has refreshed your progression.");
       setFile(null);
       setDraft(null);
+      URL.revokeObjectURL(preview);
       setPreview("");
     }
   };
-  const update = (key: keyof ImportDraft, value: string) =>
+  const update = (key: keyof Omit<ImportDraft, "uncertain">, value: string) =>
     setDraft((current) => (current ? { ...current, [key]: value } : current));
   return (
     <>
@@ -1454,13 +1460,13 @@ function ImportPage({
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
                   event.preventDefault();
-                  pickFile(event.dataTransfer.files[0]);
+                  validateAndPick(event.dataTransfer.files[0], pickFile, setStatus);
                 }}
               >
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(event) => pickFile(event.target.files?.[0])}
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => validateAndPick(event.target.files?.[0], pickFile, setStatus)}
                 />
                 <div className="upload-circle">
                   <Upload size={19} />
@@ -1469,7 +1475,7 @@ function ImportPage({
                 <span>
                   or <i>choose a file</i> from your device
                 </span>
-                <small>PNG, JPG, HEIC up to 15 MB</small>
+                <small>PNG, JPG, JPEG or WEBP · max. 15 MB</small>
               </label>
             ) : (
               <div className="selected-file">
@@ -1496,6 +1502,7 @@ function ImportPage({
                   onClick={() => {
                     setFile(null);
                     setDraft(null);
+                    URL.revokeObjectURL(preview);
                     setPreview("");
                   }}
                 >
@@ -1511,7 +1518,7 @@ function ImportPage({
               >
                 {analyzing ? (
                   <>
-                    <span className="spinner" /> Reading your screenshot…
+                    <span className="spinner" /> Reading your screenshot… {Math.round(ocrProgress * 100)}%
                   </>
                 ) : (
                   <>
@@ -1534,24 +1541,17 @@ function ImportPage({
                     <b>Review the details</b>
                     <span>Make any edits before confirming.</span>
                   </div>
-                  <span className="xp-preview">
-                    +{activityXpPreview({
-                      type: draft.type,
-                      duration: Number(draft.duration) || 0,
-                      distance: Number(draft.distance) || undefined,
-                      steps: Number(draft.steps) || undefined,
-                      source: "screenshot",
-                      confirmed: true,
-                      demo: demoAnalysis,
-                    })} XP
-                  </span>
+                  <span className="xp-preview">Server calculates XP</span>
                 </div>
+                {draft.uncertain.length > 0 && <p className="ocr-warning">Please review: {draft.uncertain.map((field) => fieldLabels[field] ?? field).join(", ")}.</p>}
+                {ocrConfidence !== null && <p className="ocr-confidence">Local OCR confidence: {Math.round(ocrConfidence)}% · Screenshot stays on this device.</p>}
+                {possibleDuplicate && <p className="ocr-warning">Similar saved activity: {possibleDuplicate.type}, {possibleDuplicate.distance ?? "?"} km, {formatDate(possibleDuplicate.date)}. Duplicate import is blocked.</p>}
                 <div className="form-grid">
                   <label className="field-label">
                     Activity
                     <select
                       value={draft.type}
-                      onChange={(e) => update("type", e.target.value)}
+                      onChange={(e) => update("type", e.target.value as ActivityType)}
                     >
                       {activityTypes.map((type) => (
                         <option key={type}>{type}</option>
@@ -1562,15 +1562,21 @@ function ImportPage({
                     Date
                     <input
                       type="date"
+                      required
                       value={draft.date}
                       onChange={(e) => update("date", e.target.value)}
                     />
+                  </label>
+                  <label className="field-label">
+                    Start time
+                    <input type="time" required value={draft.time} onChange={(e) => update("time", e.target.value)} />
                   </label>
                   <label className="field-label">
                     Duration (min)
                     <input
                       type="number"
                       min="1"
+                      required
                       value={draft.duration}
                       onChange={(e) => update("duration", e.target.value)}
                     />
@@ -1578,9 +1584,9 @@ function ImportPage({
                   <label className="field-label">
                     Distance (km)
                     <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="text"
+                      inputMode="decimal"
+                      required={draft.type === "Running" || draft.type === "Cycling" || draft.type === "Swimming"}
                       value={draft.distance}
                       onChange={(e) => update("distance", e.target.value)}
                     />
@@ -1588,7 +1594,8 @@ function ImportPage({
                   <label className="field-label">
                     Calories
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       min="0"
                       value={draft.calories}
                       onChange={(e) => update("calories", e.target.value)}
@@ -1603,6 +1610,20 @@ function ImportPage({
                       onChange={(e) => update("steps", e.target.value)}
                     />
                   </label>
+                  <label className="field-label">
+                    Average pace
+                    <input value={draft.pace} onChange={(e) => update("pace", e.target.value)} placeholder="6:30 min/km" />
+                  </label>
+                  <label className="field-label">
+                    Average heart rate (bpm)
+                    <input type="number" min="30" max="240" value={draft.heartRate} onChange={(e) => update("heartRate", e.target.value)} />
+                  </label>
+                  <label className="field-label">
+                    Screenshot app
+                    <select value={draft.sourceApp} onChange={(e) => update("sourceApp", e.target.value)}>
+                      {["Unknown", "Garmin", "Strava", "Runna", "Apple Fitness / Health", "Other"].map((source) => <option key={source}>{source}</option>)}
+                    </select>
+                  </label>
                   <label className="field-label full-field">
                     Notes
                     <input
@@ -1612,8 +1633,8 @@ function ImportPage({
                     />
                   </label>
                 </div>
-                <button className="primary-button confirm-import" type="submit">
-                  <Check size={16} /> Confirm activity <span>·</span> earn XP
+                <button className="primary-button confirm-import" type="submit" disabled={!userId}>
+                  <Check size={16} /> {userId ? "Confirm activity" : "Sign in to confirm activity"}
                 </button>
               </form>
             )}
@@ -1677,14 +1698,12 @@ function SettingsPage({
   installPrompt,
   appInstalled,
   onInstallPromptConsumed,
-  canRunPhase2SmokeTest,
 }: {
   session: Session | null;
   cloudState: "local" | "loading" | "ready" | "error";
   installPrompt: AppInstallPromptEvent | null;
   appInstalled: boolean;
   onInstallPromptConsumed: () => void;
-  canRunPhase2SmokeTest: boolean;
 }) {
   const configured = Boolean(supabase);
   const [email, setEmail] = useState("");
@@ -1903,18 +1922,6 @@ function SettingsPage({
         mylvl is an early access prototype. Integrations are clearly marked
         until a secure provider connection is available.
       </div>
-      {canRunPhase2SmokeTest && (
-        <section className="panel phase2-smoke-settings-link">
-          <div>
-            <div className="eyebrow">TEMPORARY OWNER-ONLY CHECK</div>
-            <h3>Verify Phase 2 in production</h3>
-            <p>Run the marked 6.3 km browser smoke test and remove it safely when finished.</p>
-          </div>
-          <Link className="secondary-button" to="/phase2-smoke">
-            Open test page <ArrowRight size={15} />
-          </Link>
-        </section>
-      )}
       {showInstallGuide && (
         <div
           className="modal-scrim"

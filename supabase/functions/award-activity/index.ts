@@ -6,7 +6,7 @@ import { normalizeActivityType } from "../_shared/gameEngine.ts";
 import { corsHeaders, isOriginAllowed } from "../_shared/cors.ts";
 const corsSettings = {
   allowedOrigins: Deno.env.get("ALLOWED_ORIGINS") ?? "",
-  allowLocalhost: Deno.env.get("ALLOW_LOCALHOST_ORIGINS") === "true",
+  allowLocalhost: Deno.env.get("ALLOW_LOCALHOST_ORIGINS") !== "false",
   vercelPreviewProject: Deno.env.get("VERCEL_PREVIEW_PROJECT_SLUG") ?? "mylvl",
   vercelPreviewTeam: Deno.env.get("VERCEL_PREVIEW_TEAM_SLUG") ?? "nikuristic1996-5844s-projects",
 };
@@ -78,7 +78,22 @@ Deno.serve(async (request: Request) => {
       screenshot_confirmed: incoming.source === "screenshot" && incoming.screenshotConfirmed === true,
       demo: incoming.demo === true,
     };
-    const { data: rawReservation, error: reserveError } = await adminClient.rpc("reserve_activity_award", {
+    if (activity.source === "screenshot") {
+      const date = new Date(String(activity.activity_date ?? ""));
+      const duration = Number(activity.duration_minutes);
+      const distance = Number(activity.distance_km);
+      if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now() + 120_000 || date.getTime() < Date.UTC(2000, 0, 1)) {
+        return json({ error: "Enter a valid activity date and start time that is not in the future." }, 400, origin);
+      }
+      if (!Number.isFinite(duration) || duration <= 0 || duration > 1440) {
+        return json({ error: "Activity duration must be between 1 minute and 24 hours." }, 400, origin);
+      }
+      const requiresDistance = activity.activity_type === "Running" || activity.activity_type === "Cycling" || activity.activity_type === "Swimming";
+      if ((requiresDistance && (!Number.isFinite(distance) || distance <= 0)) || (Number.isFinite(distance) && distance > 1000)) {
+        return json({ error: "Activity distance must be greater than 0 and no more than 1,000 km." }, 400, origin);
+      }
+    }
+    const { data: rawReservation, error: reserveError } = await adminClient.rpc("reserve_screenshot_activity_award", {
       p_user_id: authData.user.id,
       p_request_key: requestKey,
       p_activity: activity,
