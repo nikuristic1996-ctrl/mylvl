@@ -111,6 +111,7 @@ export async function loadCloudData(userId: string): Promise<{
     hair: avatarConfig.hair ?? "#b7f56a",
     skin: avatarConfig.skin ?? "#d89b73",
     outfit: avatarConfig.outfit ?? "#a893ff",
+    heightCm: avatarConfig.heightCm,
   };
   const data: AppData = {
     avatar,
@@ -166,7 +167,7 @@ export async function loadCloudData(userId: string): Promise<{
 export async function saveCloudAvatar(userId: string, avatar: Avatar) {
   const { error } = await requireSupabase().from("profiles").update({
     username: avatar.name || "Adventurer",
-    avatar_configuration: { hair: avatar.hair, skin: avatar.skin, outfit: avatar.outfit },
+    avatar_configuration: { hair: avatar.hair, skin: avatar.skin, outfit: avatar.outfit, heightCm: avatar.heightCm },
   }).eq("id", userId);
   if (error) throw error;
 }
