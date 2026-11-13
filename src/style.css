@@ -2615,4 +2615,50 @@ a {
   margin: 6px 0 10px;
   font-size: 13px;
 }
+.ocr-diagnostics {
+  margin: 12px 0 16px;
+  border: 1px solid #343844;
+  border-radius: 12px;
+  background: #11131a;
+  color: #d9dce4;
+  overflow: hidden;
+}
+.ocr-diagnostics summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.ocr-diagnostics-content {
+  border-top: 1px solid #343844;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ocr-diagnostics-content pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  border-radius: 8px;
+  background: #090b10;
+  color: #cbd0dc;
+}
+.ocr-confidence-list {
+  display: grid;
+  gap: 5px;
+  padding-left: 18px;
+}
+.ocr-confidence-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+.ocr-confidence-list li span:last-child {
+  color: #aab1c0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
 .confirm-import:disabled { opacity: 0.58; cursor: not-allowed; }
+

@@ -46,7 +46,7 @@ import {
 } from "./domain";
 import { calculateActivityXp, type ActivityType as EngineActivityType } from "./gameEngine";
 import { supabase } from "./supabase";
-import { fingerprintScreenshot, parseLocalizedNumber, recognizeScreenshot, screenshotFileError, type ScreenshotDraft } from "./screenshotOcr";
+import { fingerprintScreenshot, parseLocalizedNumber, recognizeScreenshot, screenshotFileError, type ScreenshotDraft, type ScreenshotParseReport } from "./screenshotOcr";
 import {
   loadCloudData,
   recordCloudActivity,
@@ -1296,7 +1296,8 @@ function Milestone({
 
 type ImportDraft = ScreenshotDraft;
 const fieldLabels: Record<string, string> = {
-  type: "activity type", date: "activity date", duration: "duration", distance: "distance", sourceApp: "source app",
+  type: "activity type", date: "activity date", time: "start time", duration: "duration", distance: "distance", sourceApp: "source app",
+  pace: "average pace", heartRate: "average heart rate",
 };
 function dateTimeTimeIsFuture(value: Date) { return value.getTime() > Date.now(); }
 function uuidFromHex(hex: string) {
@@ -1344,12 +1345,18 @@ function ImportPage({
   const [status, setStatus] = useState("");
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrConfidence, setOcrConfidence] = useState<number | null>(null);
+  const [ocrRawText, setOcrRawText] = useState("");
+  const [ocrLanguages, setOcrLanguages] = useState("");
+  const [ocrReport, setOcrReport] = useState<ScreenshotParseReport | null>(null);
   const [possibleDuplicate, setPossibleDuplicate] = useState<Activity | null>(null);
   const pickFile = (picked?: File) => {
     if (!picked) return;
     setFile(picked);
     setDraft(null);
     setOcrConfidence(null);
+    setOcrRawText("");
+    setOcrLanguages("");
+    setOcrReport(null);
     setPossibleDuplicate(null);
     setStatus("");
     if (preview) URL.revokeObjectURL(preview);
@@ -1366,6 +1373,9 @@ function ImportPage({
       });
       setDraft(result.draft);
       setOcrConfidence(result.confidence);
+      setOcrRawText(result.rawText);
+      setOcrLanguages(result.languages);
+      setOcrReport(result.report);
       setStatus(result.confidence < 60
         ? "The text was difficult to read. Please check every field carefully."
         : "Text read locally in this browser. Please review the highlighted fields.");
@@ -1375,7 +1385,10 @@ function ImportPage({
           ? error.message
           : "Could not read this image. You can still enter the details manually.",
       );
-      setDraft({ type: "Other", date: "", time: "", duration: "", distance: "", pace: "", heartRate: "", calories: "", steps: "", sourceApp: "Unknown", notes: "", uncertain: ["type", "date", "duration", "distance"] });
+      setDraft({ type: "Other", date: "", time: "", duration: "", distance: "", pace: "", heartRate: "", calories: "", elevation: "", steps: "", sourceApp: "Unknown", notes: "", uncertain: ["type", "date", "duration", "distance"] });
+      setOcrRawText("");
+      setOcrLanguages("");
+      setOcrReport(null);
     } finally {
       setAnalyzing(false);
     }
@@ -1422,7 +1435,7 @@ function ImportPage({
       source: "screenshot",
       sourceKey,
       validationStatus: "user_confirmed",
-      notes: [draft.sourceApp !== "Unknown" ? `Screenshot source: ${draft.sourceApp}` : "Screenshot import", draft.pace ? `Pace ${draft.pace}/km` : "", draft.heartRate ? `Average heart rate ${draft.heartRate} bpm` : "", draft.notes].filter(Boolean).join(" · ").slice(0, 500),
+      notes: [draft.sourceApp !== "Unknown" ? "Screenshot source: " + draft.sourceApp : "Screenshot import", draft.pace ? "Pace " + draft.pace : "", draft.heartRate ? "Average heart rate " + draft.heartRate + " bpm" : "", draft.elevation ? "Elevation " + draft.elevation + " m" : "", draft.notes].filter(Boolean).join(" · ").slice(0, 500),
     };
     if (await addActivity(activity)) {
       setStatus("Activity confirmed and sent securely. MYLVL has refreshed your progression.");
@@ -1545,6 +1558,25 @@ function ImportPage({
                 </div>
                 {draft.uncertain.length > 0 && <p className="ocr-warning">Please review: {draft.uncertain.map((field) => fieldLabels[field] ?? field).join(", ")}.</p>}
                 {ocrConfidence !== null && <p className="ocr-confidence">Local OCR confidence: {Math.round(ocrConfidence)}% · Screenshot stays on this device.</p>}
+                {ocrReport && (
+                  <details className="ocr-diagnostics">
+                    <summary>OCR diagnostics · {ocrReport.languageEstimate}</summary>
+                    <div className="ocr-diagnostics-content">
+                      <p><b>OCR languages:</b> {ocrLanguages || "English (eng) + German (deu)"}</p>
+                      <p><b>Parser match score:</b> this is a label/context heuristic; the OCR engine score is shown above.</p>
+                      <ul className="ocr-confidence-list">
+                        {Object.entries(ocrReport.fieldConfidence).map(([field, value]) => (
+                          <li key={field}><span>{fieldLabels[field] ?? field}</span><span>{value === null ? "No reliable match" : value + "%"} · {ocrReport.fieldSources[field] || "no label"}</span></li>
+                        ))}
+                      </ul>
+                      {ocrReport.warnings.length > 0 && <><b>Warnings</b><ul>{ocrReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></>}
+                      <b>Parsed fields</b>
+                      <pre>{JSON.stringify(draft, null, 2)}</pre>
+                      <b>Raw recognized text</b>
+                      <pre>{ocrRawText || "No text recognized."}</pre>
+                    </div>
+                  </details>
+                )}
                 {possibleDuplicate && <p className="ocr-warning">Similar saved activity: {possibleDuplicate.type}, {possibleDuplicate.distance ?? "?"} km, {formatDate(possibleDuplicate.date)}. Duplicate import is blocked.</p>}
                 <div className="form-grid">
                   <label className="field-label">
@@ -1600,6 +1632,10 @@ function ImportPage({
                       value={draft.calories}
                       onChange={(e) => update("calories", e.target.value)}
                     />
+                  </label>
+                  <label className="field-label">
+                    Elevation gain (m)
+                    <input type="number" min="0" value={draft.elevation} onChange={(e) => update("elevation", e.target.value)} />
                   </label>
                   <label className="field-label">
                     Steps
