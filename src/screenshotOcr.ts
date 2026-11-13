@@ -3,6 +3,7 @@ export type ScreenshotDraft = {
   date: string; time: string; duration: string; distance: string; pace: string;
   heartRate: string; calories: string; elevation: string; steps: string;
   sourceApp: string; notes: string; uncertain: string[];
+  cadence?: string; cadenceUnit?: "steps/min" | "strides/min"; movingDurationMinutes?: string;
 };
 
 export type ScreenshotParseReport = {
@@ -41,7 +42,7 @@ const labels = {
 };
 
 function normalizeScreenshotOcrLines(text: string) {
-  const metricLabels = "(?:activity\\s+date|workout\\s+date|trainingstag|aktivitätsdatum|date|datum|start(?:ed)?(?:\\s*time)?|startzeit|began|begin(?:n)?|time\\s+of\\s+day|uhrzeit|total\\s+distance|distance|distanz|strecke|gesamtstrecke|verstrichene\\s+zeit|elapsed\\s+time|elapsed|total\\s+time|moving\\s+time|bewegungszeit|active\\s+time|duration|dauer|gesamtzeit|average\\s+pace|avg\\.?\\s*pace|durchschnitts?pace|durchschnitts?tempo|best\\s+pace|fastest\\s+pace|bestes\\s+tempo|pace|tempo|average\\s+heart\\s*rate|avg\\.?\\s*(?:heart\\s*rate|hr)|durchschnittliche?\\s*(?:herzfrequenz|puls)|max(?:imum)?\\.?\\s*(?:heart\\s*rate|hr|herzfrequenz|puls)|höchst(?:e|er)?\\s*(?:herzfrequenz|puls)|herzfrequenz|heart\\s*rate|puls|calories|kcal|kalorien|energie|gesamtkalorien|gesamtenergie|elevation\\s+gain|elevation|ascent|höhenmeter|anstieg|hm|steps|schritte)";
+  const metricLabels = "(?:activity\\s+date|workout\\s+date|trainingstag|aktivitätsdatum|date|datum|start(?:ed)?(?:\\s*time)?|startzeit|began|begin(?:n)?|time\\s+of\\s+day|uhrzeit|total\\s+distance|distance|distanz|strecke|gesamtstrecke|verstrichene\\s+zeit|elapsed\\s+time|elapsed|total\\s+time|moving\\s+time|bewegungszeit|active\\s+time|duration|dauer|gesamtzeit|average\\s+pace|avg\\.?\\s*pace|durchschnitts?pace|durchschnitts?tempo|best\\s+pace|fastest\\s+pace|bestes\\s+tempo|pace|tempo|average\\s+heart\\s*rate|avg\\.?\\s*(?:heart\\s*rate|hr)|durchschnittliche?\\s*(?:herzfrequenz|puls)|max(?:imum)?\\.?\\s*(?:heart\\s*rate|hr|herzfrequenz|puls)|höchst(?:e|er)?\\s*(?:herzfrequenz|puls)|herzfrequenz|heart\\s*rate|puls|calories|kcal|kalorien|energie|gesamtkalorien|gesamtenergie|elevation\\s+gain|elevation|ascent|höhenmeter|anstieg|hm|steps|schritte|average\\s+cadence|avg\\.?\\s*cadence|step\\s+rate|cadence|schrittfrequenz|trittfrequenz|steps?\\s*\\/\\s*min|spm)";
   const protectedPhrases = /(?:average|avg\.?|best|fastest)\s+(?:pace|heart\s*rate|hr)|max(?:imum)?\.?\s+(?:heart\s*rate|hr)|best(?:es|e)?\s+tempo|höchst(?:e|er)?\s+(?:herzfrequenz|puls)|durchschnittliche?\s+(?:pace|herzfrequenz|puls)|verstrichene\s+zeit|elapsed\s+time|moving\s+time|total\s+time|activity\s+date|workout\s+date|elevation\s+gain|start\s+time|time\s+of\s+day/gi;
   return text.replace(/\r/g, "\n").replace(protectedPhrases, (phrase) => phrase.replace(/\s+/g, "\u0001"))
     .replace(new RegExp("\\s+(?=" + metricLabels + "\\b)", "gi"), "\n").replace(/\u0001/g, " ").split(/\n|[·•|;]/)
@@ -337,6 +338,17 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
     (match) => { const value = parseLocalizedNumber(match[1]); return value !== undefined && value >= 0 && value <= 200000 ? String(Math.round(value)) : undefined; }));
   const steps = stepsPick.value || "";
   fieldConfidence.steps = stepsPick.confidence; fieldSources.steps = stepsPick.source;
+  const cadenceLine = lines.find((line) => /\b(?:average\s+cadence|avg\.?\s*cadence|cadence|step\s+rate|steps?\s*\/\s*min|spm|schrittfrequenz|trittfrequenz)\b/i.test(line));
+  const cadenceMatch = cadenceLine?.match(/\b(\d{2,3}(?:[,.]\d+)?)\s*(steps?\s*\/\s*min|steps?\s*per\s*min|spm|strides?\s*\/\s*min|strides?\s*per\s*min|stride\s*rate|schritte?\s*\/\s*min|schritte?\s*pro\s*min|schrittfrequenz|trittfrequenz)?\b/i);
+  const cadenceValue = cadenceMatch ? parseLocalizedNumber(cadenceMatch[1]) : undefined;
+  const cadenceUnit = cadenceMatch && cadenceValue !== undefined
+    ? /stride|trittfrequenz/i.test(cadenceMatch[2] || "") ? "strides/min" as const
+      : /steps?|spm|schrittfrequenz/i.test(cadenceMatch[2] || "") ? "steps/min" as const : undefined
+    : undefined;
+  const cadence = cadenceValue !== undefined && cadenceValue > 0 && cadenceValue <= 300 && cadenceUnit ? String(cadenceValue) : "";
+  const movingCandidate = durationCandidates.filter((candidate) => /\b(?:moving\s+time|bewegungszeit|active\s+time)\b/i.test(candidate.source))
+    .sort((a, b) => a.rank - b.rank)[0];
+  const movingDurationMinutes = movingCandidate?.value || "";
 
   const uncertain = [
     ...(type === "Other" ? ["type"] : []), ...(!date || datePick.ambiguous ? ["date"] : []),
@@ -352,7 +364,7 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
   if (!duration) warnings.push("Duration was not reliably recognized; enter it manually.");
   if (!distance && ["Running", "Cycling", "Swimming"].includes(type)) warnings.push("Distance was not reliably recognized; enter it manually.");
   return {
-    draft: { type, date, time, duration, distance, pace, heartRate, calories, elevation, steps, sourceApp, notes: "", uncertain },
+    draft: { type, date, time, duration, distance, pace, heartRate, calories, elevation, steps, sourceApp, notes: "", uncertain, cadence, cadenceUnit, movingDurationMinutes },
     fieldConfidence, fieldSources, warnings, languageEstimate: languageEstimate(clean),
   };
 }
