@@ -299,11 +299,33 @@ export function screenshotFileError(file: Pick<File, "type" | "size">): string |
 }
 
 type OcrResult = { data: { text: string; confidence?: number } };
+type TesseractApi = {
+  createWorker: (languages: string[], oem: number, options: Record<string, unknown>) => Promise<TesseractWorker>;
+};
 type TesseractWorker = {
   recognize: (image: File | HTMLCanvasElement) => Promise<OcrResult>;
   setParameters: (parameters: Record<string, string | number>) => Promise<void>;
   terminate: () => Promise<void>;
 };
+
+export function resolveTesseractApi(imported: unknown): TesseractApi {
+  const candidates: unknown[] = [imported];
+  if (imported && typeof imported === "object") {
+    const outerDefault = (imported as { default?: unknown }).default;
+    candidates.push(outerDefault);
+    if (outerDefault && typeof outerDefault === "object") {
+      candidates.push((outerDefault as { default?: unknown }).default);
+    }
+  }
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === "object"
+      && typeof (candidate as { createWorker?: unknown }).createWorker === "function") {
+      return candidate as TesseractApi;
+    }
+  }
+  const exports = imported && typeof imported === "object" ? Object.keys(imported).join(", ") : typeof imported;
+  throw new Error("Tesseract.js 6.0.1 loaded without a usable createWorker export. Module exports: " + exports);
+}
 
 function preprocessScreenshot(image: File): Promise<HTMLCanvasElement> {
   return createImageBitmap(image).then((bitmap) => {
@@ -333,13 +355,18 @@ function resultScore(result: OcrResult) {
 export async function recognizeScreenshot(image: File, onProgress: (status: string, progress: number) => void): Promise<{
   draft: ScreenshotDraft; confidence: number; rawText: string; languages: string; report: ScreenshotParseReport;
 }> {
-  const importModule = new Function("url", "return import(url)") as (url: string) => Promise<{ createWorker: (languages: string[], oem: number, options: Record<string, unknown>) => Promise<TesseractWorker> }>;
-  const tesseract = await importModule("https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.esm.min.js");
+  const importModule = new Function("url", "return import(url)") as (url: string) => Promise<unknown>;
+  onProgress("Loading OCR engine", 0);
+  const imported = await importModule("https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.esm.min.js");
+  const tesseract = resolveTesseractApi(imported);
   const worker = await tesseract.createWorker(["eng", "deu"], 1, {
+    workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/worker.min.js",
+    corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@v6.0.0",
     langPath: "https://tessdata.projectnaptha.com/4.0.0",
     logger: (event: { status?: string; progress?: number }) => onProgress(event.status || "Reading text", event.progress || 0),
   });
   try {
+    onProgress("Recognizing screenshot", 0);
     await worker.setParameters({ tessedit_pageseg_mode: 6 });
     const original = await worker.recognize(image);
     let selected = original;
