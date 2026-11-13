@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseActivityScreenshot, parseActivityScreenshotDetailed, parseLocalizedNumber, screenshotFileError } from "../src/screenshotOcr.ts";
+import { parseActivityScreenshot, parseActivityScreenshotDetailed, parseLocalizedNumber, resolveTesseractApi, screenshotFileError } from "../src/screenshotOcr.ts";
+
+test("resolves Tesseract createWorker from CommonJS interop default export", () => {
+  const createWorker = async () => ({ recognize() {}, setParameters() {}, terminate() {} });
+  assert.equal(resolveTesseractApi({ default: { createWorker } }).createWorker, createWorker);
+});
+
+test("resolves a direct Tesseract ESM named export", () => {
+  const createWorker = async () => ({ recognize() {}, setParameters() {}, terminate() {} });
+  assert.equal(resolveTesseractApi({ createWorker }).createWorker, createWorker);
+});
+
+test("reports a clear error for an incompatible Tesseract module", () => {
+  assert.throws(() => resolveTesseractApi({ default: {} }), /without a usable createWorker export/);
+});
 
 test("parses German activity labels and decimal comma without inventing missing values", () => {
   const parsed = parseActivityScreenshot("Strava · Laufen · Distanz 6,3 km · Dauer 01:03:00 · 13.11.2026 · Durchschnittstempo 6:00/km");
