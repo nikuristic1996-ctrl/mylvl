@@ -33,15 +33,15 @@ const labels = {
   duration: /\b(?:verstrichene\s+zeit|elapsed\s+time|elapsed|total\s+time|moving\s+time|bewegungszeit|active\s+time|duration|dauer|gesamtzeit|zeit)\b/i,
   pace: /\b(?:average\s+pace|avg\.?\s*pace|durchschnitts?pace|durchschnitts?tempo|pace|tempo)\b/i,
   heartRate: /\b(?:average\s+heart\s*rate|avg\.?\s*(?:heart\s*rate|hr)|durchschnittliche?\s*(?:herzfrequenz|puls)|herzfrequenz|heart\s*rate|puls)\b/i,
-  calories: /\b(?:calories|kcal|kalorien|energie)\b/i,
+  calories: /\b(?:calories|kcal|kalorien|energie|gesamtkalorien|gesamtenergie)\b/i,
   elevation: /\b(?:elevation\s+gain|elevation|ascent|höhenmeter|anstieg|hm)\b/i,
   steps: /\b(?:steps|schritte)\b/i,
   date: /\b(?:activity\s+date|workout\s+date|trainingstag|aktivitätsdatum|datum|date)\b/i,
   time: /\b(?:start(?:ed)?(?:\s*time)?|startzeit|began|begin(?:n)?|time\s+of\s+day|uhrzeit)\b/i,
 };
 
-function normalizeLines(text: string) {
-  const metricLabels = "(?:activity\\s+date|workout\\s+date|trainingstag|aktivitätsdatum|date|datum|start(?:ed)?(?:\\s*time)?|startzeit|began|begin(?:n)?|time\\s+of\\s+day|uhrzeit|total\\s+distance|distance|distanz|strecke|gesamtstrecke|verstrichene\\s+zeit|elapsed\\s+time|elapsed|total\\s+time|moving\\s+time|bewegungszeit|active\\s+time|duration|dauer|gesamtzeit|average\\s+pace|avg\\.?\\s*pace|durchschnitts?pace|durchschnitts?tempo|best\\s+pace|fastest\\s+pace|bestes\\s+tempo|pace|tempo|average\\s+heart\\s*rate|avg\\.?\\s*(?:heart\\s*rate|hr)|durchschnittliche?\\s*(?:herzfrequenz|puls)|max(?:imum)?\\.?\\s*(?:heart\\s*rate|hr|herzfrequenz|puls)|höchst(?:e|er)?\\s*(?:herzfrequenz|puls)|herzfrequenz|heart\\s*rate|puls|calories|kcal|kalorien|energie|elevation\\s+gain|elevation|ascent|höhenmeter|anstieg|hm|steps|schritte)";
+function normalizeScreenshotOcrLines(text: string) {
+  const metricLabels = "(?:activity\\s+date|workout\\s+date|trainingstag|aktivitätsdatum|date|datum|start(?:ed)?(?:\\s*time)?|startzeit|began|begin(?:n)?|time\\s+of\\s+day|uhrzeit|total\\s+distance|distance|distanz|strecke|gesamtstrecke|verstrichene\\s+zeit|elapsed\\s+time|elapsed|total\\s+time|moving\\s+time|bewegungszeit|active\\s+time|duration|dauer|gesamtzeit|average\\s+pace|avg\\.?\\s*pace|durchschnitts?pace|durchschnitts?tempo|best\\s+pace|fastest\\s+pace|bestes\\s+tempo|pace|tempo|average\\s+heart\\s*rate|avg\\.?\\s*(?:heart\\s*rate|hr)|durchschnittliche?\\s*(?:herzfrequenz|puls)|max(?:imum)?\\.?\\s*(?:heart\\s*rate|hr|herzfrequenz|puls)|höchst(?:e|er)?\\s*(?:herzfrequenz|puls)|herzfrequenz|heart\\s*rate|puls|calories|kcal|kalorien|energie|gesamtkalorien|gesamtenergie|elevation\\s+gain|elevation|ascent|höhenmeter|anstieg|hm|steps|schritte)";
   const protectedPhrases = /(?:average|avg\.?|best|fastest)\s+(?:pace|heart\s*rate|hr)|max(?:imum)?\.?\s+(?:heart\s*rate|hr)|best(?:es|e)?\s+tempo|höchst(?:e|er)?\s+(?:herzfrequenz|puls)|durchschnittliche?\s+(?:pace|herzfrequenz|puls)|verstrichene\s+zeit|elapsed\s+time|moving\s+time|total\s+time|activity\s+date|workout\s+date|elevation\s+gain|start\s+time|time\s+of\s+day/gi;
   return text.replace(/\r/g, "\n").replace(protectedPhrases, (phrase) => phrase.replace(/\s+/g, "\u0001"))
     .replace(new RegExp("\\s+(?=" + metricLabels + "\\b)", "gi"), "\n").replace(/\u0001/g, " ").split(/\n|[·•|;]/)
@@ -156,11 +156,11 @@ function languageEstimate(text: string): ScreenshotParseReport["languageEstimate
 }
 
 export function parseActivityScreenshotDetailed(text: string): ScreenshotParseReport {
-  const lines = normalizeLines(text), clean = lines.join(" "), lower = clean.toLocaleLowerCase();
+  const lines = normalizeScreenshotOcrLines(text), clean = lines.join(" "), lower = clean.toLocaleLowerCase();
   const warnings: string[] = [], fieldConfidence: Record<string, number | null> = {}, fieldSources: Record<string, string> = {};
-  const typeMatch = lower.match(/\b(?:trail\s+running|running|run|lauf(?:en)?|jogging|walking|walk|gehen|spaziergang|hiking|wandern|cycling|bike|radfahren|fahrrad|swimming|swim|schwimmen|strength|krafttraining|weight\s+training|yoga|pilates|bodyweight|calisthenics|körpergewicht)\b/);
+  const typeMatch = lower.match(/\b(?:trail\s+running|running|run|laufbandtraining|laufbandlauf|lauf(?:en)?|jogging|treadmill(?:\s+running|\s+workout)?|walking|walk|gehen|spaziergang|hiking|wandern|cycling|bike|radfahren|fahrrad|swimming|swim|schwimmen|strength|krafttraining|weight\s+training|yoga|pilates|bodyweight|calisthenics|körpergewicht)\b/);
   const typeText = typeMatch?.[0] || "";
-  const type = /running|trail|^run$|lauf|jogging/.test(typeText) ? "Running"
+  const type = /running|trail|^run$|lauf|jogging|treadmill/.test(typeText) ? "Running"
     : /walking|^walk$|gehen|spaziergang|hiking|wandern/.test(typeText) ? "Walking"
       : /cycling|bike|radfahren|fahrrad/.test(typeText) ? "Cycling"
         : /swimming|^swim$|schwimmen/.test(typeText) ? "Swimming"
@@ -175,19 +175,36 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
   fieldSources.sourceApp = sourceApp === "Unknown" ? "" : sourceApp;
 
   const distancePattern = new RegExp("^\\s*" + numberToken + "\\s*(km|kilometers?|kilometres?|kilometer|kilometre|mi|miles?|m)\\b", "i");
-  const distanceCandidates = afterLabelCandidates(lines, labels.distance, distancePattern, (match) => {
+  const distanceAnywhere = new RegExp(numberToken + "\\s*(km|kilometers?|kilometres?|kilometer|kilometre|mi|miles?|m)\\b", "gi");
+  const distanceValue = (match: RegExpMatchArray) => {
     const value = parseLocalizedNumber(match[1]);
     if (value === undefined || value <= 0) return undefined;
     const unit = match[2].toLowerCase(), km = unit === "m" ? value / 1000 : /^(mi|mile)/.test(unit) ? value * 1.609344 : value;
     return km <= 1000 ? String(Math.round(km * 1000) / 1000) : undefined;
+  };
+  const distanceCandidates = afterLabelCandidates(lines, labels.distance, distancePattern, (match) => {
+    return distanceValue(match);
   }, (line) => /\b(?:total\s+distance|gesamtstrecke)\b/i.test(line) ? 0 : 1,
   /\b(?:elevation|höhenmeter|ascent|anstieg|gain|pace|tempo|best|goal|target)\b/i);
   let distancePick = chooseCandidate(distanceCandidates);
   if (!distanceCandidates.length) {
+    for (let index = 1; index < lines.length; index += 1) {
+      if (!labels.distance.test(lines[index])) continue;
+      const previousLine = lines[index - 1];
+      const matches = [...previousLine.matchAll(distanceAnywhere)];
+      const lastMatch = matches.at(-1);
+      if (!lastMatch || /:(?:\s*)$/.test(previousLine.slice(0, lastMatch.index))) continue;
+      const value = distanceValue(lastMatch);
+      if (value) distanceCandidates.push({ value, source: previousLine + " → " + lines[index], rank: 0 });
+    }
+    distancePick = chooseCandidate(distanceCandidates);
+  }
+  if (!distanceCandidates.length) {
     const unlabelled: Candidate<string>[] = [];
     for (const line of lines) {
-      if (/\b(?:elevation|höhenmeter|ascent|anstieg|gain|pace|tempo|best|goal|target)\b/i.test(line)) continue;
-      for (const match of line.matchAll(new RegExp(distancePattern.source, "gi"))) {
+      if (/\b(?:elevation|höhenmeter|ascent|anstieg|gain|best|goal|target)\b/i.test(line)) continue;
+      for (const match of line.matchAll(distanceAnywhere)) {
+        if (/:(?:\s*)$/.test(line.slice(0, match.index))) continue;
         const value = parseLocalizedNumber(match[1]);
         if (value === undefined || value <= 0) continue;
         const unit = match[2].toLowerCase(), km = unit === "m" ? value / 1000 : /^(mi|mile)/.test(unit) ? value * 1.609344 : value;
@@ -206,6 +223,19 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
     (line) => /\b(?:elapsed\s+time|verstrichene\s+zeit|total\s+time|gesamtzeit|duration|dauer)\b/i.test(line) ? 0
       : /\b(?:moving\s+time|bewegungszeit|active\s+time)\b/i.test(line) ? 2 : 1,
     /\b(?:pace|tempo|start(?:ed)?(?:\s*time)?|startzeit|best|fastest)\b/i);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!labels.duration.test(lines[index])) continue;
+    const hasFollowingValue = durationCandidates.some((candidate) => candidate.source === lines[index]);
+    if (hasFollowingValue) continue;
+    for (let previous = index - 1; previous >= Math.max(0, index - 2); previous -= 1) {
+      const clockMatches = [...lines[previous].matchAll(/\b(\d{1,3}:[0-5]\d(?::[0-5]\d)?)\b/g)];
+      const lastClock = clockMatches.at(-1);
+      if (!lastClock) continue;
+      const value = durationMinutes(lastClock[1], lines[index]);
+      if (value) durationCandidates.push({ value, source: lines[previous] + " → " + lines[index], rank: 0 });
+      break;
+    }
+  }
   const durationPick = chooseCandidate(durationCandidates), duration = durationPick.value || "";
   if (durationCandidates.some((item) => /\b(?:moving\s+time|bewegungszeit)\b/i.test(item.source))
     && durationCandidates.some((item) => /\b(?:elapsed|verstrichene|total\s+time)\b/i.test(item.source))) {
@@ -226,6 +256,8 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
   if (datePick.ambiguous) warnings.push("Multiple possible activity dates were found; date was left blank.");
 
   const timeCandidates = afterLabelCandidates(lines, labels.time, /^\s*(\d{1,2}:[0-5]\d\s*(?:am|pm)?)/i, (match) => parseTime(match[1]));
+  const dateAndStartTime = clean.match(/\b\d{1,2}\s*[./]?\s*(?:jan(?:uar|uary)?|feb(?:ruar|ruary)?|märz|mär|mar(?:ch)?|apr(?:il)?|may|mai|jun(?:i|e)?|jul(?:i|y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|okt(?:ober)?|oct(?:ober)?|nov(?:ember)?|dez(?:ember)?|dec(?:ember)?)\.?\s*[@,·-]?\s*(\d{1,2}:[0-5]\d)\b/i);
+  if (dateAndStartTime) timeCandidates.push({ value: parseTime(dateAndStartTime[1]) || "", source: dateAndStartTime[0], rank: 0 });
   const timePick = chooseCandidate(timeCandidates), time = timePick.value || "";
   fieldConfidence.time = timePick.confidence; fieldSources.time = timePick.source;
   if (timePick.ambiguous) warnings.push("Multiple possible start times were found; start time was left blank.");
@@ -238,6 +270,15 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
       return minute > 0 && second < 60 ? minute + ":" + String(second).padStart(2, "0") + (unit ? " " + unit : "") : undefined;
     }, (line) => /\b(?:average|avg|durchschnitt)\b/i.test(line) ? 0 : 1,
     /\b(?:best(?:es|e)?|fastest|maximum|max\.?)\s*(?:pace|tempo)\b/i);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const paceContext = lines.slice(Math.max(0, index - 1), index + 1).join(" ");
+    if (/\b(?:best(?:es|e)?|fastest|maximum|max\.?)\s*(?:pace|tempo)\b/i.test(paceContext)) continue;
+    for (const match of line.matchAll(/\b(\d{1,2}):([0-5]\d)\s*(?:min\s*)?(\/\s*(km|mi|mile)|per\s+(km|mi|mile))\b/gi)) {
+      const unit = (match[4] || match[5]).toLowerCase().startsWith("mi") ? "min/mi" : "min/km";
+      paceCandidates.push({ value: match[1] + ":" + match[2] + " " + unit, source: line, rank: -1 });
+    }
+  }
   const pacePick = chooseCandidate(paceCandidates), pace = pacePick.value || "";
   if (pace && !/min\/(?:km|mi)$/.test(pace)) pacePick.confidence = 55;
   fieldConfidence.pace = pacePick.confidence; fieldSources.pace = pacePick.source;
@@ -250,12 +291,38 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
       const value = Number(match[1]); return value >= 30 && value <= 240 ? String(value) : undefined;
     }, (line) => /\b(?:average|avg|durchschnitt)\b/i.test(line) ? 0 : 1,
     /\b(?:max(?:imum)?|höchst(?:e|er)?|spitze)\s*(?:heart\s*rate|hr|herzfrequenz|puls)\b/i);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!labels.heartRate.test(lines[index]) || /\b(?:max(?:imum)?|höchst(?:e|er)?|spitze)\b/i.test(lines[index])) continue;
+    for (let previous = index - 1; previous >= Math.max(0, index - 2); previous -= 1) {
+      const bpm = lines[previous].match(/\b(\d{2,3})\s*(?:bpm|beats?\s*\/\s*min|schl(?:äge)?\s*\/\s*min)\b/i);
+      if (!bpm) continue;
+      const value = Number(bpm[1]);
+      if (value >= 30 && value <= 240) hrCandidates.push({ value: String(value), source: lines[previous] + " → " + lines[index], rank: 0 });
+      break;
+    }
+  }
   const hrPick = chooseCandidate(hrCandidates), heartRate = hrPick.value || "";
   fieldConfidence.heartRate = hrPick.confidence; fieldSources.heartRate = hrPick.source;
 
   const caloriesPick = chooseCandidate(afterLabelCandidates(lines, labels.calories, new RegExp("^\\s*" + numberToken, "i"),
     (match) => { const value = parseLocalizedNumber(match[1]); return value !== undefined && value > 0 && value <= 20000 ? String(Math.round(value)) : undefined; },
     () => 0, /\b(?:elevation|höhenmeter|pace|tempo|heart\s*rate|herzfrequenz)\b/i));
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/\b(?:calories|kcal|kalorien|energie|gesamtkalorien|gesamtenergie)\b/i.test(lines[index])) continue;
+    if (caloriesPick.value) break;
+    for (let previous = index - 1; previous >= Math.max(0, index - 2); previous -= 1) {
+      const numbers = [...lines[previous].matchAll(/\b(\d{2,5})\b/g)];
+      const lastNumber = numbers.at(-1);
+      if (!lastNumber) continue;
+      const value = Number(lastNumber[1]);
+      if (value > 0 && value <= 20000) {
+        caloriesPick.value = String(value);
+        caloriesPick.source = lines[previous] + " → " + lines[index];
+        caloriesPick.confidence = 55;
+      }
+      break;
+    }
+  }
   const calories = caloriesPick.value || "";
   fieldConfidence.calories = caloriesPick.confidence; fieldSources.calories = caloriesPick.source;
   const elevationPick = chooseCandidate(afterLabelCandidates(lines, labels.elevation, new RegExp("^\\s*" + numberToken + "\\s*(m|meter|ft|feet)?", "i"),
@@ -274,8 +341,10 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
   const uncertain = [
     ...(type === "Other" ? ["type"] : []), ...(!date || datePick.ambiguous ? ["date"] : []),
     ...(!time || timePick.ambiguous ? ["time"] : []), ...(!duration || durationPick.ambiguous ? ["duration"] : []),
-    ...(!distance || distancePick.ambiguous ? ["distance"] : []), ...(pacePick.ambiguous || (pacePick.confidence !== null && pacePick.confidence < 60) ? ["pace"] : []),
-    ...(hrPick.ambiguous ? ["heartRate"] : []), ...(sourceApp === "Unknown" ? ["sourceApp"] : []),
+    ...(!distance || distancePick.ambiguous || (distancePick.confidence !== null && distancePick.confidence < 60) ? ["distance"] : []), ...(pacePick.ambiguous || (pacePick.confidence !== null && pacePick.confidence < 60) ? ["pace"] : []),
+    ...(hrPick.ambiguous || (hrPick.confidence !== null && hrPick.confidence < 60) ? ["heartRate"] : []),
+    ...(caloriesPick.confidence !== null && caloriesPick.confidence < 60 ? ["calories"] : []),
+    ...(sourceApp === "Unknown" ? ["sourceApp"] : []),
   ];
   if (type === "Other") warnings.push("Activity type was not recognized; choose it manually.");
   if (!date) warnings.push("Activity date was not reliably recognized; enter it manually.");
@@ -355,8 +424,8 @@ function resultScore(result: OcrResult) {
 export async function recognizeScreenshot(image: File, onProgress: (status: string, progress: number) => void): Promise<{
   draft: ScreenshotDraft; confidence: number; rawText: string; languages: string; report: ScreenshotParseReport;
 }> {
-  const importModule = new Function("url", "return import(url)") as (url: string) => Promise<unknown>;
   onProgress("Loading OCR engine", 0);
+  const importModule = new Function("url", "return import(url)") as (url: string) => Promise<unknown>;
   const imported = await importModule("https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.esm.min.js");
   const tesseract = resolveTesseractApi(imported);
   const worker = await tesseract.createWorker(["eng", "deu"], 1, {
@@ -390,4 +459,3 @@ export async function fingerprintScreenshot(file: File, userId: string, canonica
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId + "|" + canonical));
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
-
