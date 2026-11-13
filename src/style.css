@@ -2699,3 +2699,8 @@ a {
 }
 .confirm-import:disabled { opacity: 0.58; cursor: not-allowed; }
 
+
+.pwa-update-banner { position: fixed; z-index: 60; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 24px); padding: 10px 12px 10px 16px; border: 1px solid #3b414b; border-radius: 14px; background: #1b1f27; box-shadow: 0 12px 35px #0009; color: #f3f3ef; font-size: 14px; }
+.pwa-update-banner button { flex: 0 0 auto; border: 0; border-radius: 9px; padding: 8px 12px; background: var(--lime); color: #11150c; font-weight: 700; cursor: pointer; }
+.pwa-update-banner .pwa-update-dismiss { display: grid; place-items: center; padding: 7px; background: transparent; color: #bec2cc; }
+@media (max-width: 520px) { .pwa-update-banner { gap: 7px; padding: 8px; font-size: 13px; } .pwa-update-banner button { padding: 7px 8px; } }
