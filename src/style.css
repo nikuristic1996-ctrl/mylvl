@@ -2704,3 +2704,269 @@ a {
 .pwa-update-banner button { flex: 0 0 auto; border: 0; border-radius: 9px; padding: 8px 12px; background: var(--lime); color: #11150c; font-weight: 700; cursor: pointer; }
 .pwa-update-banner .pwa-update-dismiss { display: grid; place-items: center; padding: 7px; background: transparent; color: #bec2cc; }
 @media (max-width: 520px) { .pwa-update-banner { gap: 7px; padding: 8px; font-size: 13px; } .pwa-update-banner button { padding: 7px 8px; } }
+
+.progress-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 1100px;
+}
+.progress-stat-card {
+  min-height: 112px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.progress-stat-card > span {
+  color: #aab0bd;
+  font-size: 14px;
+}
+.progress-stat-card > strong {
+  font-size: 24px;
+  letter-spacing: -0.5px;
+}
+.progress-stat-card > small,
+.progress-trend-card small,
+.cosmetic-reward-card small {
+  color: #a4a7af;
+  font-size: 13px;
+}
+.progress-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 1100px;
+  margin-top: 12px;
+}
+.progress-trend-card {
+  min-width: 0;
+  min-height: 205px;
+  padding: 17px;
+}
+.progress-trend-card h3,
+.activity-exp-breakdown h3,
+.recent-progress-activities h3,
+.cosmetic-reward-card h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+.progress-trend-bars {
+  height: 125px;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+.progress-trend-point {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.progress-trend-value {
+  color: #c9f59d;
+  font-size: 12px;
+}
+.progress-trend-track {
+  width: min(24px, 80%);
+  height: 88px;
+  border-radius: 7px;
+  background: #292d36;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+.progress-trend-track i {
+  width: 100%;
+  min-height: 3px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, #c4ff78, #83b944);
+}
+.progress-trend-point small {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.activity-exp-breakdown,
+.recent-progress-activities {
+  max-width: 1100px;
+  padding: 17px;
+  margin-top: 12px;
+}
+.activity-exp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 49px;
+  border-bottom: 1px solid #292d36;
+}
+.activity-exp-row:last-child {
+  border-bottom: 0;
+}
+.activity-exp-row > span {
+  display: grid;
+  gap: 3px;
+}
+.activity-exp-row small {
+  color: #a4a7af;
+  font-size: 13px;
+}
+.activity-exp-row > b {
+  font-size: 14px;
+  text-align: right;
+}
+.season-rank-progress {
+  margin-top: 16px;
+}
+.season-rank-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+  font-size: 14px;
+}
+.season-rank-copy span {
+  color: #a4a7af;
+  text-align: right;
+}
+.season-countdown {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #c1f18d;
+  font-size: 14px;
+  margin-top: 12px;
+}
+.season-progression-card .season-highest-rank {
+  margin-bottom: 0;
+}
+.cosmetic-inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 1100px;
+}
+.cosmetic-reward-card {
+  padding: 16px;
+  min-width: 0;
+}
+.cosmetic-reward-card.owned {
+  border-color: #8ebd58;
+  background: linear-gradient(145deg, #1a2118, #14171d 72%);
+}
+.cosmetic-reward-type {
+  display: inline-block;
+  color: #b7f56a;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.cosmetic-reward-card p {
+  min-height: 42px;
+  color: #a4a7af;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.cosmetic-reward-status {
+  color: #c2c6ce;
+  font-size: 13px;
+  margin: 11px 0 8px;
+}
+@media (max-width: 760px) {
+  .progress-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .progress-stat-card {
+    min-height: 102px;
+    padding: 13px;
+  }
+  .progress-stat-card > strong {
+    font-size: 21px;
+  }
+  .progress-trend-grid,
+  .cosmetic-inventory-grid {
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+  .season-rank-copy {
+    flex-direction: column;
+    gap: 3px;
+  }
+  .season-rank-copy span {
+    text-align: left;
+  }
+}
+.setup-hint code {
+  color: #d0c1ff;
+  font-size: 14px;
+}
+
+.ocr-warning {
+  color: #ffd38a;
+  background: #f6ae2012;
+  border: 1px solid #f6ae2044;
+  border-radius: 10px;
+  padding: 11px 13px;
+  margin: 10px 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ocr-confidence {
+  color: #9ea5b4;
+  margin: 6px 0 10px;
+  font-size: 13px;
+}
+.ocr-diagnostics {
+  margin: 12px 0 16px;
+  border: 1px solid #343844;
+  border-radius: 12px;
+  background: #11131a;
+  color: #d9dce4;
+  overflow: hidden;
+}
+.ocr-diagnostics summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.ocr-diagnostics-content {
+  border-top: 1px solid #343844;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ocr-diagnostics-content pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  border-radius: 8px;
+  background: #090b10;
+  color: #cbd0dc;
+}
+.ocr-confidence-list {
+  display: grid;
+  gap: 5px;
+  padding-left: 18px;
+}
+.ocr-confidence-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+.ocr-confidence-list li span:last-child {
+  color: #aab1c0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.confirm-import:disabled { opacity: 0.58; cursor: not-allowed; }
+
