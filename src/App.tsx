@@ -1667,6 +1667,7 @@ function ImportPage({
       `OCR languages: ${ocrLanguages || "not loaded"}`,
       `Image dimensions: source ${ocrImageDiagnostics ? `${ocrImageDiagnostics.sourceDimensions.width}x${ocrImageDiagnostics.sourceDimensions.height}` : "unavailable"}; processed ${ocrImageDiagnostics ? `${ocrImageDiagnostics.processedDimensions.width}x${ocrImageDiagnostics.processedDimensions.height}` : "unavailable"}`,
       `Preprocessing: ${ocrImageDiagnostics?.preprocessing || "not completed"}`,
+      `High-resolution OCR tile dimensions: ${ocrImageDiagnostics?.ocrTileDimensions.length ? ocrImageDiagnostics.ocrTileDimensions.map(({ width, height }) => `${width}x${height}`).join(", ") : "not used"}`,
       `Extracted date: ${draft?.date || "missing / manual review required"}`,
       `Extracted distance: ${draft?.distance ? `${draft.distance} km` : "missing / manual review required"}`,
       `Measured steps: ${draft?.steps || "not detected"}`,
@@ -1830,6 +1831,7 @@ function ImportPage({
                   <p><b>OCR languages:</b> {ocrLanguages || "English (eng) + German (deu), not loaded yet"}</p>
                   <p><b>Image dimensions:</b> source {ocrImageDiagnostics ? `${ocrImageDiagnostics.sourceDimensions.width} × ${ocrImageDiagnostics.sourceDimensions.height}` : "not decoded"}; processed {ocrImageDiagnostics ? `${ocrImageDiagnostics.processedDimensions.width} × ${ocrImageDiagnostics.processedDimensions.height}` : "not prepared"}</p>
                   <p><b>Preprocessing:</b> {ocrImageDiagnostics?.preprocessing || "not completed"}</p>
+                  <p><b>High-resolution OCR regions:</b> {ocrImageDiagnostics?.ocrTileDimensions.length ? ocrImageDiagnostics.ocrTileDimensions.map(({ width, height }) => `${width} × ${height}`).join(", ") : "not used"}</p>
                   <ul className="ocr-confidence-list">
                     {([
                       ["Date", draft?.date || "Missing; manual review required"],
@@ -2457,4 +2459,5 @@ function ActivityModal({
     </div>
   );
 }
+
 

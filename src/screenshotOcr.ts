@@ -19,6 +19,7 @@ export type ScreenshotOcrDiagnostics = {
   sourceDimensions: ImageDimensions;
   processedDimensions: ImageDimensions;
   preprocessing: string;
+  ocrTileDimensions: ImageDimensions[];
 };
 
 const numberToken = "(\\d{1,3}(?:[ .,'’]\\d{3})*(?:[,.]\\d+)?|\\d+(?:[,.]\\d+)?)";
@@ -85,6 +86,18 @@ function dateOnLine(line: string): string {
   const month = months[(named[2] || named[4]).toLocaleLowerCase()];
   const year = Number(named[3] || named[6]);
   return month ? safeDate(year, month, day) : "";
+}
+
+function repairOcrPaceColon(text: string) {
+  let repaired = false;
+  const value = text.replace(/\b(\d{3,4})\s*(?:min\s*)?\/\s*(km|mi(?:le)?)\b/gi, (token, digits: string, unit: string) => {
+    const minutes = Number(digits.slice(0, -2));
+    const seconds = Number(digits.slice(-2));
+    if (minutes < 1 || minutes > 30 || seconds > 59) return token;
+    repaired = true;
+    return `${minutes}:${String(seconds).padStart(2, "0")} min/${unit}`;
+  });
+  return { text: value, repaired };
 }
 
 type Candidate<T> = { value: T; source: string; rank: number };
@@ -169,7 +182,8 @@ function languageEstimate(text: string): ScreenshotParseReport["languageEstimate
 }
 
 export function parseActivityScreenshotDetailed(text: string): ScreenshotParseReport {
-  const lines = normalizeScreenshotOcrLines(text), clean = lines.join(" "), lower = clean.toLocaleLowerCase();
+  const paceRepair = repairOcrPaceColon(text);
+  const lines = normalizeScreenshotOcrLines(paceRepair.text), clean = lines.join(" "), lower = clean.toLocaleLowerCase();
   const warnings: string[] = [], fieldConfidence: Record<string, number | null> = {}, fieldSources: Record<string, string> = {};
   const typeMatch = lower.match(/\b(?:trail\s+running|running|run|laufbandtraining|laufbandlauf|lauf(?:en)?|jogging|treadmill(?:\s+running|\s+workout)?|walking|walk|gehen|spaziergang|hiking|wandern|cycling|bike|radfahren|fahrrad|swimming|swim|schwimmen|strength|krafttraining|weight\s+training|yoga|pilates|bodyweight|calisthenics|körpergewicht)\b/);
   const typeText = typeMatch?.[0] || "";
@@ -298,6 +312,7 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
   fieldConfidence.pace = pacePick.confidence; fieldSources.pace = pacePick.source;
   if (pacePick.ambiguous) warnings.push("Average pace is ambiguous; pace was left blank.");
   if (pace && pacePick.confidence === 55) warnings.push("Pace unit is missing; select min/km or min/mi before saving.");
+  if (paceRepair.repaired) warnings.push("OCR pace punctuation was repaired from digits; verify the pace and unit manually.");
 
   const hrCandidates = afterLabelCandidates(lines, labels.heartRate, /^\s*(\d{2,3})\s*(?:bpm|beats?\s*\/\s*min|schl(?:äge)?\s*\/\s*min)?/i,
     (match, line) => {
@@ -396,7 +411,7 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
   const uncertain = [
     ...(type === "Other" ? ["type"] : []), ...(!date || datePick.ambiguous ? ["date"] : []),
     ...(!time || timePick.ambiguous ? ["time"] : []), ...(!duration || durationPick.ambiguous ? ["duration"] : []),
-    ...(!distance || distancePick.ambiguous || (distancePick.confidence !== null && distancePick.confidence < 60) ? ["distance"] : []), ...(pacePick.ambiguous || (pacePick.confidence !== null && pacePick.confidence < 60) ? ["pace"] : []),
+    ...(!distance || distancePick.ambiguous || (distancePick.confidence !== null && distancePick.confidence < 60) ? ["distance"] : []), ...(paceRepair.repaired || pacePick.ambiguous || (pacePick.confidence !== null && pacePick.confidence < 60) ? ["pace"] : []),
     ...(hrPick.ambiguous || (hrPick.confidence !== null && hrPick.confidence < 60) ? ["heartRate"] : []),
     ...(caloriesPick.confidence !== null && caloriesPick.confidence < 60 ? ["calories"] : []),
     ...(sourceApp === "Unknown" ? ["sourceApp"] : []),
@@ -467,6 +482,22 @@ export function calculatePreprocessDimensions(width: number, height: number): Im
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
+export type OcrTileLayout = { top: number; sourceHeight: number; width: number; height: number };
+export function calculateOcrTileLayout(width: number, height: number): OcrTileLayout[] {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+    throw new Error("The screenshot has invalid image dimensions.");
+  }
+  const tileHeight = 1080, overlap = 120, stride = tileHeight - overlap;
+  const tiles: OcrTileLayout[] = [];
+  for (let top = 0; top < height; top += stride) {
+    const sourceHeight = Math.min(tileHeight, height - top);
+    const scale = Math.min(1.5, 2000 / width, Math.sqrt(3_200_000 / (width * sourceHeight)));
+    tiles.push({ top, sourceHeight, width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(sourceHeight * scale)) });
+    if (top + sourceHeight >= height) break;
+  }
+  return tiles;
+}
+
 async function decodeScreenshot(image: File): Promise<ImageBitmap | HTMLImageElement> {
   if (typeof createImageBitmap === "function") {
     try {
@@ -503,7 +534,7 @@ async function preprocessScreenshot(image: File): Promise<{
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
     context.drawImage(decoded, 0, 0, canvas.width, canvas.height);
-    return { canvas, diagnostics: { sourceDimensions, processedDimensions, preprocessing: "EXIF-aware decode; bounded resize; color preserved" } };
+    return { canvas, diagnostics: { sourceDimensions, processedDimensions, preprocessing: "EXIF-aware decode; bounded resize; color preserved", ocrTileDimensions: [] } };
   } finally {
     if ("close" in decoded && typeof decoded.close === "function") decoded.close();
   }
@@ -530,11 +561,53 @@ function needsContrastPass(result: OcrResult) {
     || (/(?:\bdate\b|\bdatum\b)/i.test(text) && !draft.date);
 }
 
+function needsTilePass(result: OcrResult) {
+  const text = result.data.text;
+  const draft = parseActivityScreenshotDetailed(text).draft;
+  return (result.data.confidence ?? 0) < 70
+    || !draft.distance
+    || (/(?:steps|schritte)/i.test(text) && !draft.steps)
+    || (/(?:\bdate\b|\bdatum\b)/i.test(text) && !draft.date);
+}
+
 function resultScore(result: OcrResult) {
   const draft = parseActivityScreenshotDetailed(result.data.text).draft;
-  const populated = [draft.time, draft.duration, draft.pace, draft.heartRate, draft.calories].filter(Boolean).length;
-  const critical = Number(Boolean(draft.date)) * 12 + Number(Boolean(draft.distance)) * 12 + Number(Boolean(draft.steps)) * 10;
-  return (result.data.confidence || 0) + populated * 2 + critical;
+  const populated = [draft.type !== "Other", draft.time, draft.duration, draft.pace, draft.heartRate, draft.calories].filter(Boolean).length;
+  const critical = Number(Boolean(draft.date)) * 35 + Number(Boolean(draft.distance)) * 35 + Number(Boolean(draft.steps)) * 25;
+  return (result.data.confidence || 0) * 0.25 + populated * 5 + critical;
+}
+
+async function recognizeVerticalTiles(worker: TesseractWorker, source: HTMLCanvasElement, diagnostics: ScreenshotOcrDiagnostics) {
+  const layout = calculateOcrTileLayout(source.width, source.height);
+  const texts: string[] = [];
+  let confidence = 0;
+  for (const tile of layout) {
+    const canvas = document.createElement("canvas");
+    canvas.width = tile.width;
+    canvas.height = tile.height;
+    try {
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas region processing is unavailable.");
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(source, 0, tile.top, source.width, tile.sourceHeight, 0, 0, tile.width, tile.height);
+      await worker.setParameters({ tessedit_pageseg_mode: 6 });
+      const result = await worker.recognize(canvas);
+      texts.push(result.data.text);
+      confidence += result.data.confidence ?? 0;
+    } finally {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  }
+  return {
+    result: { data: { text: texts.join("\n"), confidence: confidence / Math.max(1, layout.length) } } as OcrResult,
+    diagnostics: {
+      ...diagnostics,
+      preprocessing: `${diagnostics.preprocessing}; high-resolution vertical OCR tiles compared (${layout.length} regions)`,
+      ocrTileDimensions: layout.map(({ width, height }) => ({ width, height })),
+    },
+  };
 }
 
 export async function recognizeScreenshot(image: File, onProgress: (status: string, progress: number, diagnostics?: ScreenshotOcrDiagnostics) => void): Promise<{
@@ -576,6 +649,23 @@ export async function recognizeScreenshot(image: File, onProgress: (status: stri
         onProgress("Using the color-preserved OCR result", 1, finalDiagnostics);
       }
     }
+    if (needsTilePass(selected)) {
+      const tileStartDiagnostics = {
+        ...finalDiagnostics,
+        preprocessing: finalDiagnostics.preprocessing + "; high-resolution OCR regions enabled for missing or low-confidence fields",
+      };
+      onProgress("Reading small text in high-resolution regions", 0.75, tileStartDiagnostics);
+      try {
+        const tiled = await recognizeVerticalTiles(worker, prepared.canvas, tileStartDiagnostics);
+        if (resultScore(tiled.result) > resultScore(selected)) selected = tiled.result;
+        finalDiagnostics = tiled.diagnostics;
+      } catch {
+        finalDiagnostics = {
+          ...tileStartDiagnostics,
+          preprocessing: tileStartDiagnostics.preprocessing + "; region OCR unavailable; best full-image result retained",
+        };
+      }
+    }
     const report = parseActivityScreenshotDetailed(selected.data.text);
     return { draft: report.draft, confidence: selected.data.confidence || 0, rawText: selected.data.text,
       languages: "English (eng) + German (deu)", report, diagnostics: finalDiagnostics };
@@ -592,3 +682,4 @@ export async function fingerprintScreenshot(file: File, userId: string, canonica
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId + "|" + canonical));
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
+

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculatePreprocessDimensions, parseActivityScreenshot, parseActivityScreenshotDetailed, parseLocalizedNumber, resolveTesseractApi, screenshotFileError } from "../src/screenshotOcr.ts";
+import { calculateOcrTileLayout, calculatePreprocessDimensions, parseActivityScreenshot, parseActivityScreenshotDetailed, parseLocalizedNumber, resolveTesseractApi, screenshotFileError } from "../src/screenshotOcr.ts";
 
 test("resolves Tesseract createWorker from CommonJS interop default export", () => {
   const createWorker = async () => ({ recognize() {}, setParameters() {}, terminate() {} });
@@ -170,6 +170,23 @@ test("real Garmin German OCR sample preserves distance and pace but leaves yearl
   assert.ok(parsed.warnings.some((warning) => warning.includes("without a year")));
 });
 
+test("repairs a missing OCR colon in pace but marks the value for review", () => {
+  const parsed = parseActivityScreenshotDetailed("Garmin Laufbandtraining Distanz 6,34 km 157 bpm @ 717 /km Herzfrequenz Pace 45:31 544 Gesamtzeit");
+  assert.equal(parsed.draft.distance, "6.34");
+  assert.equal(parsed.draft.pace, "7:17 min/km");
+  assert.ok(parsed.draft.uncertain.includes("pace"));
+  assert.ok(parsed.warnings.some((warning) => warning.includes("punctuation was repaired")));
+});
+
+test("high-resolution OCR tiles overlap and stay within mobile memory bounds", () => {
+  const tiles = calculateOcrTileLayout(1220, 2712);
+  assert.equal(tiles.length, 3);
+  assert.ok(tiles[1].top < tiles[0].top + tiles[0].sourceHeight);
+  assert.ok(tiles.every(({ width, height }) => width * height <= 3_200_000));
+  assert.ok(tiles[0].width > 1220);
+  assert.throws(() => calculateOcrTileLayout(0, 2712), /invalid image dimensions/i);
+});
+
 test("English Garmin step counts accept comma grouping and labels on the next line", () => {
   const parsed = parseActivityScreenshotDetailed("Garmin Running\nDistance 6.3 km\nSteps\n12,480\nDate 2026-11-12");
   assert.equal(parsed.draft.distance, "6.3");
@@ -221,3 +238,4 @@ test("extracts cadence and moving time with explicit step units for running esti
   assert.equal(parsed.cadenceUnit, "steps/min");
   assert.equal(parsed.movingDurationMinutes, "42");
 });
+
