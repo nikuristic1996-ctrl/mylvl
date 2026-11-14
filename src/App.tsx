@@ -236,7 +236,7 @@ export default function App() {
         setSeasonHistory(history);
         setRecentTransactions(transactions);
         setScheduledSeason(upcoming);
-        setProgressionStats(stats);
+        setProgressionStats(normalizeProgressionStats(stats));
         setCosmeticRewards(rewards);
         setCloudState("ready");
       })
