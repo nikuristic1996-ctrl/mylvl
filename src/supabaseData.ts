@@ -1,5 +1,6 @@
 import type { Activity, ActivityType, AppData, Avatar, ActivityValidationStatus } from "./domain";
 import { seasonProgressForXp, type SeasonProgress } from "./gameEngine";
+import { normalizeProgressionStats, type ProgressionStats } from "./progressionStats";
 import { supabase } from "./supabase";
 
 type DatabaseActivity = {
@@ -53,6 +54,12 @@ export type ArchivedSeasonSnapshot = {
   endsAt: string;
   progress: SeasonProgress;
 };
+export type ScheduledSeasonSnapshot = { name: string; startsAt: string; endsAt: string };
+export type CosmeticRewardSnapshot = {
+  key: string; name: string; description: string;
+  type: "outfit" | "profile_frame" | "title" | "badge" | "visual_effect";
+  milestoneXp: number; owned: boolean; unlockedAt?: string;
+};
 
 function requireSupabase() {
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -73,11 +80,16 @@ export async function loadCloudData(userId: string): Promise<{
   totalXp: number;
   season: SeasonSnapshot | null;
   seasonHistory: ArchivedSeasonSnapshot[];
+  scheduledSeason: ScheduledSeasonSnapshot | null;
   recentTransactions: RecentExperienceTransaction[];
+  progressionStats: ProgressionStats;
+  cosmeticRewards: CosmeticRewardSnapshot[];
 }> {
   const client = requireSupabase();
+  const { error: archiveError } = await client.rpc("archive_my_ended_seasons");
+  if (archiveError) throw archiveError;
   const now = new Date().toISOString();
-  const [profile, activities, transactions, progress, seasonRow, seasonHistoryRows] = await Promise.all([
+  const [profile, activities, transactions, progress, seasonRow, seasonHistoryRows, nextSeasonRow, rewardCatalog, ownedRewards, statsQuery] = await Promise.all([
     client.from("profiles").select("username, avatar_configuration").eq("id", userId).maybeSingle(),
     client.from("activities").select("*").eq("user_id", userId).order("activity_date", { ascending: false }).limit(100),
     client.from("experience_transactions")
@@ -88,8 +100,15 @@ export async function loadCloudData(userId: string): Promise<{
       .lte("starts_at", now).gt("ends_at", now).order("starts_at", { ascending: false }).limit(1).maybeSingle(),
     client.from("season_history").select("season_key, season_name, starts_at, ends_at, season_exp, season_level, season_rank")
       .eq("user_id", userId).order("ends_at", { ascending: false }).limit(8),
+    client.from("seasons").select("name, starts_at, ends_at")
+      .gt("starts_at", now).order("starts_at", { ascending: true }).limit(1).maybeSingle(),
+    client.from("season_reward_catalog").select("reward_key, name, description, reward_type, milestone_exp")
+      .eq("active", true).order("milestone_exp", { ascending: true }),
+    client.from("user_cosmetic_rewards").select("reward_key, unlocked_at").eq("user_id", userId),
+    client.rpc("get_my_progression_stats"),
   ]);
-  const error = profile.error ?? activities.error ?? transactions.error ?? progress.error ?? seasonRow.error ?? seasonHistoryRows.error;
+  const error = profile.error ?? activities.error ?? transactions.error ?? progress.error ?? seasonRow.error
+    ?? seasonHistoryRows.error ?? nextSeasonRow.error ?? rewardCatalog.error ?? ownedRewards.error ?? statsQuery.error;
   if (error) throw error;
 
   const currentSeason = seasonRow.data;
@@ -149,11 +168,26 @@ export async function loadCloudData(userId: string): Promise<{
     endsAt: item.ends_at,
     progress: seasonProgressForXp(Number(item.season_exp)),
   }));
+  const ownership = new Map((ownedRewards.data ?? []).map((item) => [item.reward_key, item.unlocked_at]));
+  const cosmeticRewards: CosmeticRewardSnapshot[] = (rewardCatalog.data ?? []).map((item) => ({
+    key: item.reward_key,
+    name: item.name,
+    description: item.description,
+    type: item.reward_type,
+    milestoneXp: Number(item.milestone_exp),
+    owned: ownership.has(item.reward_key),
+    unlockedAt: ownership.get(item.reward_key),
+  }));
   return {
     data,
     totalXp: Number(progress.data?.total_exp ?? 0),
     season,
     seasonHistory,
+    scheduledSeason: nextSeasonRow.data ? {
+      name: nextSeasonRow.data.name,
+      startsAt: nextSeasonRow.data.starts_at,
+      endsAt: nextSeasonRow.data.ends_at,
+    } : null,
     recentTransactions: transactionRows.map((item) => ({
       id: item.id,
       activityId: item.activity_id,
@@ -161,6 +195,8 @@ export async function loadCloudData(userId: string): Promise<{
       type: item.transaction_type,
       createdAt: item.created_at,
     })),
+    progressionStats: normalizeProgressionStats(statsQuery.data),
+    cosmeticRewards,
   };
 }
 
