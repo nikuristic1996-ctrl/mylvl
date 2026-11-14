@@ -591,10 +591,19 @@ async function recognizeVerticalTiles(worker: TesseractWorker, source: HTMLCanva
       context.imageSmoothingEnabled = true;
       context.imageSmoothingQuality = "high";
       context.drawImage(source, 0, tile.top, source.width, tile.sourceHeight, 0, 0, tile.width, tile.height);
-      await worker.setParameters({ tessedit_pageseg_mode: 6 });
-      const result = await worker.recognize(canvas);
-      texts.push(result.data.text);
-      confidence += result.data.confidence ?? 0;
+      // Fitness screenshots are sparse layouts: try sparse-text segmentation first,
+      // then compare the block mode when the first pass missed critical fields.
+      await worker.setParameters({ tessedit_pageseg_mode: 11 });
+      const sparse = await worker.recognize(canvas);
+      let selected = sparse;
+      const sparseDraft = parseActivityScreenshotDetailed(sparse.data.text).draft;
+      if (!sparseDraft.distance || (/(?:steps|schritte)/i.test(sparse.data.text) && !sparseDraft.steps)) {
+        await worker.setParameters({ tessedit_pageseg_mode: 6 });
+        const block = await worker.recognize(canvas);
+        if (resultScore(block) > resultScore(sparse)) selected = block;
+      }
+      texts.push(selected.data.text);
+      confidence += selected.data.confidence ?? 0;
     } finally {
       canvas.width = 0;
       canvas.height = 0;
@@ -604,7 +613,7 @@ async function recognizeVerticalTiles(worker: TesseractWorker, source: HTMLCanva
     result: { data: { text: texts.join("\n"), confidence: confidence / Math.max(1, layout.length) } } as OcrResult,
     diagnostics: {
       ...diagnostics,
-      preprocessing: `${diagnostics.preprocessing}; high-resolution vertical OCR tiles compared (${layout.length} regions)`,
+      preprocessing: `${diagnostics.preprocessing}; high-resolution vertical OCR tiles compared with sparse-text and block segmentation (${layout.length} regions)`,
       ocrTileDimensions: layout.map(({ width, height }) => ({ width, height })),
     },
   };
