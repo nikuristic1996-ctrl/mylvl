@@ -48,12 +48,15 @@ import { calculateActivityXp, type ActivityType as EngineActivityType } from "./
 import { supabase } from "./supabase";
 import { fingerprintScreenshot, parseLocalizedNumber, recognizeScreenshot, screenshotFileError, type ScreenshotDraft, type ScreenshotParseReport } from "./screenshotOcr";
 import { estimateRunningSteps } from "./stepEstimation";
+import { EMPTY_PROGRESSION_STATS, highestHistoricalSeasonRank, normalizeProgressionStats, seasonCountdown, seasonRankProgress, type ProgressionStats } from "./progressionStats";
 import {
   loadCloudData,
   recordCloudActivity,
   saveCloudAvatar,
   type ArchivedSeasonSnapshot,
+  type CosmeticRewardSnapshot,
   type RecentExperienceTransaction,
+  type ScheduledSeasonSnapshot,
   type SeasonSnapshot,
 } from "./supabaseData";
 
@@ -147,6 +150,9 @@ export default function App() {
   const [cloudSeason, setCloudSeason] = useState<SeasonSnapshot | null>(null);
   const [seasonHistory, setSeasonHistory] = useState<ArchivedSeasonSnapshot[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<RecentExperienceTransaction[]>([]);
+  const [scheduledSeason, setScheduledSeason] = useState<ScheduledSeasonSnapshot | null>(null);
+  const [progressionStats, setProgressionStats] = useState<ProgressionStats>(EMPTY_PROGRESSION_STATS);
+  const [cosmeticRewards, setCosmeticRewards] = useState<CosmeticRewardSnapshot[]>([]);
   const [cloudState, setCloudState] = useState<
     "local" | "loading" | "ready" | "error"
   >(supabase ? "loading" : "local");
@@ -213,19 +219,25 @@ export default function App() {
       setCloudSeason(null);
       setSeasonHistory([]);
       setRecentTransactions([]);
+      setScheduledSeason(null);
+      setProgressionStats(EMPTY_PROGRESSION_STATS);
+      setCosmeticRewards([]);
       setCloudState("local");
       return;
     }
     let active = true;
     setCloudState("loading");
     void loadCloudData(userId)
-      .then(({ data: cloudData, totalXp: xp, season, seasonHistory: history, recentTransactions: transactions }) => {
+      .then(({ data: cloudData, totalXp: xp, season, seasonHistory: history, recentTransactions: transactions, scheduledSeason: upcoming, progressionStats: stats, cosmeticRewards: rewards }) => {
         if (!active) return;
         setData(cloudData);
         setCloudTotalXp(xp);
         setCloudSeason(season);
         setSeasonHistory(history);
         setRecentTransactions(transactions);
+        setScheduledSeason(upcoming);
+        setProgressionStats(stats);
+        setCosmeticRewards(rewards);
         setCloudState("ready");
       })
       .catch((error: unknown) => {
@@ -243,6 +255,9 @@ export default function App() {
         setCloudSeason(null);
         setSeasonHistory([]);
         setRecentTransactions([]);
+        setScheduledSeason(null);
+        setProgressionStats(EMPTY_PROGRESSION_STATS);
+        setCosmeticRewards([]);
         setCloudState("error");
         setToast(
           error instanceof Error
@@ -292,6 +307,9 @@ export default function App() {
         setCloudSeason(refreshed.season);
         setSeasonHistory(refreshed.seasonHistory);
         setRecentTransactions(refreshed.recentTransactions);
+        setScheduledSeason(refreshed.scheduledSeason);
+        setProgressionStats(refreshed.progressionStats);
+        setCosmeticRewards(refreshed.cosmeticRewards);
         setToast(
           result.xp > 0
             ? `+${result.xp} XP awarded · nice work`
@@ -483,7 +501,10 @@ export default function App() {
                   level={level}
                   season={cloudSeason}
                   seasonHistory={seasonHistory}
+                  scheduledSeason={scheduledSeason}
                   recentTransactions={recentTransactions}
+                  progressionStats={progressionStats}
+                  cosmeticRewards={cosmeticRewards}
                   cloudState={cloudState}
                 />
               }
@@ -1125,7 +1146,10 @@ function ProgressPage({
   level,
   season,
   seasonHistory,
+  scheduledSeason,
   recentTransactions,
+  progressionStats,
+  cosmeticRewards,
   cloudState,
 }: {
   activities: Activity[];
@@ -1133,14 +1157,16 @@ function ProgressPage({
   level: ReturnType<typeof levelForXp>;
   season: SeasonSnapshot | null;
   seasonHistory: ArchivedSeasonSnapshot[];
+  scheduledSeason: ScheduledSeasonSnapshot | null;
   recentTransactions: RecentExperienceTransaction[];
+  progressionStats: ProgressionStats;
+  cosmeticRewards: CosmeticRewardSnapshot[];
   cloudState: "local" | "loading" | "ready" | "error";
 }) {
-  const xpThisWeek = activities
-    .filter(
-      (item) => Date.now() - new Date(item.date).getTime() <= 7 * 86400000,
-    )
-    .reduce((sum, item) => sum + item.xp, 0);
+  const xpThisWeek = progressionStats.weeklyTrend.reduce((sum, point) => sum + point.xp, 0);
+  const rankProgress = season ? seasonRankProgress(season.progress.totalXp) : null;
+  const countdown = season ? seasonCountdown(season.endsAt) : scheduledSeason ? seasonCountdown(scheduledSeason.startsAt) : null;
+  const highestRank = highestHistoricalSeasonRank(seasonHistory.map((item) => item.progress.rank));
   return (
     <>
       <PageHeading
@@ -1159,26 +1185,7 @@ function ProgressPage({
           <div className="trend-note">
             <ArrowUpRight size={15} /> You're building a habit
           </div>
-          <div className="progress-sparkline">
-            <svg viewBox="0 0 300 75" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="line-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0" stopColor="#b7f56a" stopOpacity=".2" />
-                  <stop offset="1" stopColor="#b7f56a" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M0 62 C28 56 27 43 55 48 S93 24 120 42 S154 16 183 31 S215 42 237 20 S273 30 300 7 V75 H0Z"
-                fill="url(#line-fill)"
-              />
-              <path
-                d="M0 62 C28 56 27 43 55 48 S93 24 120 42 S154 16 183 31 S215 42 237 20 S273 30 300 7"
-                fill="none"
-                stroke="#b7f56a"
-                strokeWidth="2.2"
-              />
-            </svg>
-          </div>
+          <small>Based on server-recorded activity rewards from the last 7 UTC days.</small>
         </div>
       </div>
       <section className="panel season-progression-card">
@@ -1196,12 +1203,106 @@ function ProgressPage({
                 <i style={{ width: `${Math.min(100, (season.progress.currentXp / season.progress.neededXp) * 100)}%` }} />
               </div>
               <small>{season.progress.capped ? "Season level cap reached" : `${season.progress.currentXp.toLocaleString()} / ${season.progress.neededXp.toLocaleString()} EXP to next season level`}</small>
+              {rankProgress && (
+                <div className="season-rank-progress">
+                  <div className="season-rank-copy">
+                    <b>{season.progress.rank} rank</b>
+                    <span>{rankProgress.nextRank ? `${rankProgress.xpRemaining.toLocaleString()} EXP to ${rankProgress.nextRank}` : "Highest seasonal rank"}</span>
+                  </div>
+                  <div className="season-progress-track" aria-label={`${rankProgress.progressPercent}% progress to next rank`}>
+                    <i style={{ width: `${rankProgress.progressPercent}%` }} />
+                  </div>
+                  <small>{rankProgress.nextRank ? `${season.progress.totalXp.toLocaleString()} / ${rankProgress.nextRankXp.toLocaleString()} EXP` : `${season.progress.totalXp.toLocaleString()} seasonal EXP`}</small>
+                </div>
+              )}
+              <div className="season-countdown"><Clock3 size={14} />{countdown?.expired ? "Season ended · history is preserved" : `${countdown?.days ?? 0}d ${countdown?.hours ?? 0}h remaining`}</div>
+              <p className="season-highest-rank">Highest rank in previous seasons: <b>{highestRank ?? "None yet"}</b></p>
+            </>
+          ) : scheduledSeason ? (
+            <>
+              <h2>{scheduledSeason.name}</h2>
+              <p>Starts {formatDate(scheduledSeason.startsAt)} · 12 weeks · UTC</p>
+              <div className="season-countdown"><Clock3 size={14} />Starts in {countdown?.days ?? 0}d {countdown?.hours ?? 0}h</div>
             </>
           ) : (
-            <p>No season has been scheduled yet. Seasonal progression will appear here once a UTC season window is configured.</p>
+            <p>Season 01 – Find Your Rhythm is prepared but not activated. It will start after a start date is approved.</p>
           )}
         </div>
       </section>
+      <div className="section-heading progress-section">
+        <div><h2>Activity statistics</h2><p>Aggregated from your saved Supabase activity and EXP records.</p></div>
+      </div>
+      {cloudState === "loading" ? (
+        <div className="panel progress-empty-state">Loading your activity statistics…</div>
+      ) : cloudState === "error" ? (
+        <div className="panel progress-empty-state">Activity statistics could not be loaded.</div>
+      ) : cloudState === "local" ? (
+        <div className="panel progress-empty-state">Sign in to view statistics from your saved account.</div>
+      ) : (
+        <>
+          <div className="progress-stat-grid">
+            <ProgressStatCard label="Total activities" value={progressionStats.totalActivities.toLocaleString()} />
+            <ProgressStatCard label="Running distance" value={`${progressionStats.runningDistanceKm.toLocaleString(undefined, { maximumFractionDigits: 1 })} km`} />
+            <ProgressStatCard label="Measured running steps" value={progressionStats.measuredRunningSteps.toLocaleString()} />
+            <ProgressStatCard label="Estimated running steps" value={progressionStats.estimatedRunningSteps.toLocaleString()} detail="Informational only · no walking EXP" />
+          </div>
+          {progressionStats.totalActivities === 0 ? (
+            <div className="panel progress-empty-state">No activities yet. Confirm an activity import or log a real activity to start your statistics.</div>
+          ) : (
+            <>
+              <div className="progress-trend-grid">
+                <TrendCard title="Weekly activity trend" subtitle="Last 7 days · UTC" points={progressionStats.weeklyTrend} />
+                <TrendCard title="Monthly activity trend" subtitle="Last 6 months · UTC" points={progressionStats.monthlyTrend} />
+              </div>
+              <section className="panel activity-exp-breakdown">
+                <h3>EXP by activity type</h3>
+                {Object.entries(progressionStats.xpByActivityType).length ? (
+                  Object.entries(progressionStats.xpByActivityType).sort((a, b) => b[1] - a[1]).map(([type, xp]) => (
+                    <div className="activity-exp-row" key={type}><span>{type}</span><b>{xp.toLocaleString()} XP</b></div>
+                  ))
+                ) : <p>No activity EXP transactions yet.</p>}
+              </section>
+              <section className="panel recent-progress-activities">
+                <h3>Recent activities</h3>
+                {activities.slice(0, 5).map((activity) => (
+                  <div className="activity-exp-row" key={activity.id}>
+                    <span><b>{activity.type}</b><small>{formatDate(activity.date)}{activity.distance !== undefined ? ` · ${activity.distance} km` : ""}</small></span>
+                    <b>{activity.duration} min</b>
+                  </div>
+                ))}
+              </section>
+            </>
+          )}
+        </>
+      )}
+      <div className="section-heading progress-section">
+        <div><h2>Cosmetic inventory</h2><p>Season rewards you unlock remain in your account permanently.</p></div>
+      </div>
+      {cloudState === "loading" ? (
+        <div className="panel progress-empty-state">Loading your inventory…</div>
+      ) : cloudState === "error" ? (
+        <div className="panel progress-empty-state">Your cosmetic inventory could not be loaded.</div>
+      ) : cloudState === "local" ? (
+        <div className="panel progress-empty-state">Sign in to view your permanently owned rewards.</div>
+      ) : cosmeticRewards.length ? (
+        <div className="cosmetic-inventory-grid">
+          {cosmeticRewards.map((reward) => {
+            const progress = season ? Math.min(100, (season.progress.totalXp / Math.max(1, reward.milestoneXp)) * 100) : 0;
+            return (
+              <article className={`panel cosmetic-reward-card${reward.owned ? " owned" : ""}`} key={reward.key}>
+                <span className="cosmetic-reward-type">{reward.type.replace("_", " ")}</span>
+                <h3>{reward.name}</h3>
+                <p>{reward.description}</p>
+                <div className="cosmetic-reward-status">{reward.owned ? "Permanently owned" : `Unlock at ${reward.milestoneXp.toLocaleString()} seasonal EXP`}</div>
+                {!reward.owned && <div className="season-progress-track"><i style={{ width: `${progress}%` }} /></div>}
+                {reward.owned && reward.unlockedAt && <small>Unlocked {formatDate(reward.unlockedAt)}</small>}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="panel progress-empty-state">No cosmetic rewards are configured yet.</div>
+      )}
       <div className="section-heading progress-section">
         <div>
           <h2>Your milestones</h2>
@@ -1213,7 +1314,7 @@ function ProgressPage({
           icon={<Flame size={19} />}
           name="Finding a rhythm"
           detail="Log activities on 5 different days"
-          progress={Math.min(activities.length, 5)}
+          progress={Math.min(cloudState === "ready" ? progressionStats.totalActivities : 0, 5)}
           max={5}
         />
         <Milestone
@@ -1227,7 +1328,7 @@ function ProgressPage({
           icon={<Heart size={19} />}
           name="Showing up"
           detail="Complete 10 real-life activities"
-          progress={Math.min(activities.length, 10)}
+          progress={Math.min(cloudState === "ready" ? progressionStats.totalActivities : 0, 10)}
           max={10}
         />
       </div>
@@ -1282,6 +1383,36 @@ function ProgressPage({
     </>
   );
 }
+function ProgressStatCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="panel progress-stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {detail && <small>{detail}</small>}
+    </div>
+  );
+}
+
+function TrendCard({ title, subtitle, points }: { title: string; subtitle: string; points: ProgressionStats["weeklyTrend"] }) {
+  const maximum = Math.max(1, ...points.map((point) => point.activities));
+  return (
+    <section className="panel progress-trend-card">
+      <div><h3>{title}</h3><small>{subtitle}</small></div>
+      {points.length ? (
+        <div className="progress-trend-bars">
+          {points.map((point) => (
+            <div className="progress-trend-point" key={point.period} title={`${point.activities} activities · ${point.xp} XP`}>
+              <span className="progress-trend-value">{point.activities || ""}</span>
+              <div className="progress-trend-track"><i style={{ height: `${point.activities ? Math.max(6, (point.activities / maximum) * 100) : 3}%` }} /></div>
+              <small>{point.period.length > 7 ? point.period.slice(5) : point.period.slice(5)}</small>
+            </div>
+          ))}
+        </div>
+      ) : <p>No trend data yet.</p>}
+    </section>
+  );
+}
+
 function Milestone({
   icon,
   name,
