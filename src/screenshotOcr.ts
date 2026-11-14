@@ -80,12 +80,22 @@ function dateOnLine(line: string): string {
     aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, okt: 10, oktober: 10, october: 10,
     nov: 11, november: 11, dec: 12, dez: 12, dezember: 12, december: 12,
   };
-  const named = line.match(/\b(\d{1,2})\s+([a-zä]{3,9})\.?,?\s+(20\d{2})\b|\b([a-zä]{3,9})\.?\s+(\d{1,2}),?\s+(20\d{2})\b/i);
-  if (!named) return "";
-  const day = Number(named[1] || named[5]);
-  const month = months[(named[2] || named[4]).toLocaleLowerCase()];
-  const year = Number(named[3] || named[6]);
-  return month ? safeDate(year, month, day) : "";
+  const named = line.match(/\b(\d{1,2})\s*[./-]?\s*([a-zä]{3,9})\.?,?\s+(20\d{2})\b|\b([a-zä]{3,9})\.?\s+(\d{1,2}),?\s+(20\d{2})\b/i);
+  if (named) {
+    const day = Number(named[1] || named[5]);
+    const month = months[(named[2] || named[4]).toLocaleLowerCase()];
+    const year = Number(named[3] || named[6]);
+    return month ? safeDate(year, month, day) : "";
+  }
+  const namedWithoutYear = line.match(/\b(\d{1,2})\s*[./-]?\s*([a-zä]{3,9})\.?(?=$|\s|[@,·-])|\b([a-zä]{3,9})\.?\s+(\d{1,2})\b/i);
+  if (namedWithoutYear) {
+    const day = Number(namedWithoutYear[1] || namedWithoutYear[4]);
+    const month = months[(namedWithoutYear[2] || namedWithoutYear[3]).toLocaleLowerCase()];
+    if (month) return safeDate(new Date().getFullYear(), month, day);
+  }
+  const germanNumeric = line.match(/\bdatum\s*[:·-]?\s*(\d{1,2})[./](\d{1,2})(?![./]\d{2,4})\b/i);
+  if (germanNumeric) return safeDate(new Date().getFullYear(), Number(germanNumeric[2]), Number(germanNumeric[1]));
+  return "";
 }
 
 function repairOcrPaceColon(text: string) {
@@ -281,7 +291,8 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
   const datePick = chooseCandidate(dateCandidates), date = datePick.value || "";
   fieldConfidence.date = datePick.confidence; fieldSources.date = datePick.source;
   if (datePick.ambiguous) warnings.push("Multiple possible activity dates were found; date was left blank.");
-  if (!date && lines.some(hasYearlessActivityDate)) warnings.push("A date appears without a year; enter the year manually rather than guessing it.");
+  const currentYearApplied = Boolean(date && hasYearlessActivityDate(datePick.source));
+  if (currentYearApplied) warnings.push(`The screenshot date had no year; the current year (${new Date().getFullYear()}) was applied. Verify the date.`);
 
   const timeCandidates = afterLabelCandidates(lines, labels.time, /^\s*(\d{1,2}:[0-5]\d\s*(?:am|pm)?)/i, (match) => parseTime(match[1]));
   const dateAndStartTime = clean.match(/\b\d{1,2}\s*[./]?\s*(?:jan(?:uar|uary)?|feb(?:ruar|ruary)?|märz|mär|mar(?:ch)?|apr(?:il)?|may|mai|jun(?:i|e)?|jul(?:i|y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|okt(?:ober)?|oct(?:ober)?|nov(?:ember)?|dez(?:ember)?|dec(?:ember)?)\.?\s*[@,·-]?\s*(\d{1,2}:[0-5]\d)\b/i);
@@ -409,7 +420,7 @@ export function parseActivityScreenshotDetailed(text: string): ScreenshotParseRe
   const movingDurationMinutes = movingCandidate?.value || "";
 
   const uncertain = [
-    ...(type === "Other" ? ["type"] : []), ...(!date || datePick.ambiguous ? ["date"] : []),
+    ...(type === "Other" ? ["type"] : []), ...(!date || datePick.ambiguous || currentYearApplied ? ["date"] : []),
     ...(!time || timePick.ambiguous ? ["time"] : []), ...(!duration || durationPick.ambiguous ? ["duration"] : []),
     ...(!distance || distancePick.ambiguous || (distancePick.confidence !== null && distancePick.confidence < 60) ? ["distance"] : []), ...(paceRepair.repaired || pacePick.ambiguous || (pacePick.confidence !== null && pacePick.confidence < 60) ? ["pace"] : []),
     ...(hrPick.ambiguous || (hrPick.confidence !== null && hrPick.confidence < 60) ? ["heartRate"] : []),

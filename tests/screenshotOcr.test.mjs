@@ -147,27 +147,34 @@ test("Garmin German treadmill OCR tolerates metric labels after their values", (
   assert.equal(parsed.draft.time, "19:04");
   assert.equal(parsed.draft.heartRate, "157");
   assert.equal(parsed.draft.calories, "544");
-  assert.equal(parsed.draft.date, "");
+  assert.equal(parsed.draft.date, `${new Date().getFullYear()}-11-12`);
   assert.ok(parsed.draft.uncertain.includes("calories"));
 });
 
-test("German Garmin mobile text reads decimal-comma distance and grouped measured steps without guessing a year", () => {
+test("German Garmin mobile text reads decimal-comma distance, grouped steps, and applies the current year", () => {
   const parsed = parseActivityScreenshotDetailed("Garmin Laufbandtraining · 12. Nov. @ 19:04 · 6,34 km Distanz · 8.432 Schritte · 7:17 /km Durchschnittspace · 45:31 Gesamtzeit");
   assert.equal(parsed.draft.type, "Running");
   assert.equal(parsed.draft.distance, "6.34");
   assert.equal(parsed.draft.steps, "8432");
-  assert.equal(parsed.draft.date, "");
-  assert.ok(parsed.warnings.some((warning) => warning.includes("without a year")));
+  assert.equal(parsed.draft.date, `${new Date().getFullYear()}-11-12`);
+  assert.ok(parsed.draft.uncertain.includes("date"));
+  assert.ok(parsed.warnings.some((warning) => warning.includes(`current year (${new Date().getFullYear()}) was applied`)));
 });
 
-test("real Garmin German OCR sample preserves distance and pace but leaves yearless activity date blank", () => {
+test("real Garmin German OCR sample preserves distance and pace and applies current year to its date", () => {
   const raw = "15:59 m BN Ree & Laufbandtraining : Übersicht Statistiken Intervalle Diagramme A A] 12. Nov. @ 19:04 a W 1 Do. Tempo - Tempo 2-1-1 (6k # Notizen hinzufügen 6,34 km Distanz 157 bpm @ 7:17 /km @ @ Herzfrequenz @ Pace 45:31 544 Gesamtzeit Gesamtkalorien L&I Foto Teilen Evaluierung Pace (Hoch Aerob) Hauptnutzen Normal Befinden Mäßig Empfundene 3/10 Anstrengung";
   const parsed = parseActivityScreenshotDetailed(raw);
   assert.equal(parsed.draft.type, "Running");
   assert.equal(parsed.draft.distance, "6.34");
   assert.equal(parsed.draft.pace, "7:17 min/km");
-  assert.equal(parsed.draft.date, "");
-  assert.ok(parsed.warnings.some((warning) => warning.includes("without a year")));
+  assert.equal(parsed.draft.date, `${new Date().getFullYear()}-11-12`);
+  assert.ok(parsed.draft.uncertain.includes("date"));
+});
+
+test("labeled German numeric date without a year uses the current year", () => {
+  const parsed = parseActivityScreenshotDetailed("Laufen · Datum 12.11 · Distanz 6,3 km");
+  assert.equal(parsed.draft.date, `${new Date().getFullYear()}-11-12`);
+  assert.ok(parsed.draft.uncertain.includes("date"));
 });
 
 test("repairs a missing OCR colon in pace but marks the value for review", () => {
