@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { estimateRunningSteps, estimatedStepLength, parsePaceSecondsPerKm, personalizedStepLength } from "../src/stepEstimation.ts";
+import { parseActivityScreenshot } from "../src/screenshotOcr.ts";
 
 test("interpolates the documented 178 cm reference curve at its anchor paces", () => {
   assert.equal(estimatedStepLength(540), 0.75);
@@ -27,6 +28,15 @@ test("estimates steps for decimal distances and rejects absent or invalid inputs
   assert.equal(estimateRunningSteps({ type: "Running", distanceKm: 6.3 }).steps, null);
   assert.equal(estimateRunningSteps({ type: "Running", distanceKm: -1, pace: "7:00/km" }).steps, null);
   assert.equal(estimateRunningSteps({ type: "Walking", distanceKm: 6.3, pace: "7:00/km" }).steps, null);
+});
+
+test("missing measured steps in a Garmin OCR result uses the existing estimate without adding walking EXP", () => {
+  const parsed = parseActivityScreenshot("Garmin Laufbandtraining Distanz 6,34 km Durchschnittspace 7:17 /km");
+  assert.equal(parsed.steps, "");
+  const result = estimateRunningSteps({ type: parsed.type, distanceKm: Number(parsed.distance), pace: parsed.pace });
+  assert.equal(result.source, "estimated");
+  assert.ok(result.steps > 0);
+  assert.equal(result.method, "pace");
 });
 
 test("never replaces measured steps and prefers explicit cadence over estimates", () => {

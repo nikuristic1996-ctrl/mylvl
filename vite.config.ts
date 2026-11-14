@@ -3,7 +3,14 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+const processEnvironment = (globalThis as typeof globalThis & {
+  process?: { env?: Record<string, string | undefined> };
+}).process?.env ?? {};
+
 export default defineConfig({
+  define: {
+    __MYLVL_BUILD_COMMIT__: JSON.stringify(processEnvironment.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "local"),
+  },
   plugins: [
     react(),
     tailwindcss(),

@@ -13,6 +13,7 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
+  Copy,
   Download,
   Dumbbell,
   Flame,
@@ -46,7 +47,7 @@ import {
 } from "./domain";
 import { calculateActivityXp, type ActivityType as EngineActivityType } from "./gameEngine";
 import { supabase } from "./supabase";
-import { fingerprintScreenshot, parseLocalizedNumber, recognizeScreenshot, screenshotFileError, type ScreenshotDraft, type ScreenshotParseReport } from "./screenshotOcr";
+import { fingerprintScreenshot, parseLocalizedNumber, recognizeScreenshot, screenshotFileError, type ScreenshotDraft, type ScreenshotParseReport, type ScreenshotOcrDiagnostics } from "./screenshotOcr";
 import { estimateRunningSteps } from "./stepEstimation";
 import { EMPTY_PROGRESSION_STATS, highestHistoricalSeasonRank, normalizeProgressionStats, seasonCountdown, seasonRankProgress, type ProgressionStats } from "./progressionStats";
 import {
@@ -1454,6 +1455,7 @@ const fieldLabels: Record<string, string> = {
   type: "activity type", date: "activity date", time: "start time", duration: "duration", distance: "distance", sourceApp: "source app",
   pace: "average pace", heartRate: "average heart rate",
 };
+const MYLVL_APP_VERSION = "0.1.0";
 function dateTimeTimeIsFuture(value: Date) { return value.getTime() > Date.now(); }
 function uuidFromHex(hex: string) {
   const raw = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
@@ -1508,6 +1510,8 @@ function ImportPage({
   const [ocrRawText, setOcrRawText] = useState("");
   const [ocrLanguages, setOcrLanguages] = useState("");
   const [ocrReport, setOcrReport] = useState<ScreenshotParseReport | null>(null);
+  const [ocrImageDiagnostics, setOcrImageDiagnostics] = useState<ScreenshotOcrDiagnostics | null>(null);
+  const [ocrCopyStatus, setOcrCopyStatus] = useState("");
   const [possibleDuplicate, setPossibleDuplicate] = useState<Activity | null>(null);
   const [stepSource, setStepSource] = useState<"measured" | "estimated" | "manual" | null>(null);
   const stepEstimate = draft ? estimateRunningSteps({
@@ -1530,6 +1534,8 @@ function ImportPage({
     setOcrRawText("");
     setOcrLanguages("");
     setOcrReport(null);
+    setOcrImageDiagnostics(null);
+    setOcrCopyStatus("");
     setPossibleDuplicate(null);
     setStatus("");
     if (preview) URL.revokeObjectURL(preview);
@@ -1548,9 +1554,10 @@ function ImportPage({
     setOcrPhase("Loading OCR engine");
     setStatus("");
     try {
-      const result = await recognizeScreenshot(file, (phase, progress) => {
+      const result = await recognizeScreenshot(file, (phase, progress, diagnostics) => {
         setOcrPhase(phase);
-        setOcrState(phase === "Loading OCR engine" ? "loading" : "recognizing");
+        setOcrState(/recogniz|layout|reading/i.test(phase) ? "recognizing" : "loading");
+        if (diagnostics) setOcrImageDiagnostics(diagnostics);
         setStatus(phase + " · " + Math.round(progress * 100) + "%");
         setOcrProgress(progress);
       });
@@ -1566,6 +1573,7 @@ function ImportPage({
       setOcrRawText(result.rawText);
       setOcrLanguages(result.languages);
       setOcrReport(result.report);
+      setOcrImageDiagnostics(result.diagnostics);
       const hasRequiredFields = Boolean(result.draft.date && result.draft.time && result.draft.duration
         && (!["Running", "Cycling", "Swimming"].includes(result.draft.type) || result.draft.distance));
       const complete = hasRequiredFields && result.draft.uncertain.length === 0
@@ -1642,6 +1650,50 @@ function ImportPage({
   };
   const update = (key: keyof Omit<ImportDraft, "uncertain">, value: string) =>
     setDraft((current) => (current ? { ...current, [key]: value } : current));
+  const copyOcrDiagnostics = async () => {
+    const userAgent = navigator.userAgent || "Unknown";
+    const extendedNavigator = navigator as Navigator & { userAgentData?: { platform?: string; mobile?: boolean } };
+    const platform = extendedNavigator.userAgentData?.platform
+      ? `${extendedNavigator.userAgentData.platform}${extendedNavigator.userAgentData.mobile ? " (mobile)" : ""}`
+      : navigator.platform || "Unknown";
+    const estimatedStepText = effectiveStepSource === "estimated" && displayedSteps
+      ? `${displayedSteps} (estimated; ${stepEstimate?.method ?? "distance/pace"})` : "Not available";
+    const report = [
+      `MYLVL ${MYLVL_APP_VERSION} · commit ${__MYLVL_BUILD_COMMIT__}`,
+      `Platform: ${platform}`,
+      `User agent: ${userAgent}`,
+      `Installed PWA: ${window.matchMedia("(display-mode: standalone)").matches || ("standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone))}`,
+      `OCR initialization/execution: ${ocrState === "failed" ? `failed at ${ocrPhase || "unknown phase"}` : ocrState === "success" ? "complete" : ocrState === "partial" ? "complete; review required" : ocrState === "manual" ? "failed; manual entry selected" : ocrPhase || "not started"}`,
+      `OCR languages: ${ocrLanguages || "not loaded"}`,
+      `Image dimensions: source ${ocrImageDiagnostics ? `${ocrImageDiagnostics.sourceDimensions.width}x${ocrImageDiagnostics.sourceDimensions.height}` : "unavailable"}; processed ${ocrImageDiagnostics ? `${ocrImageDiagnostics.processedDimensions.width}x${ocrImageDiagnostics.processedDimensions.height}` : "unavailable"}`,
+      `Preprocessing: ${ocrImageDiagnostics?.preprocessing || "not completed"}`,
+      `Extracted date: ${draft?.date || "missing / manual review required"}`,
+      `Extracted distance: ${draft?.distance ? `${draft.distance} km` : "missing / manual review required"}`,
+      `Measured steps: ${draft?.steps || "not detected"}`,
+      `Estimated steps: ${estimatedStepText}`,
+      `Warnings: ${ocrReport?.warnings.join(" | ") || "none"}`,
+      `Error: ${ocrError || "none"}`,
+      "Raw OCR text:", ocrRawText || "(no text returned)",
+    ].join("\n");
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
+      else {
+        const textarea = document.createElement("textarea");
+        textarea.value = report;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand("copy");
+        textarea.remove();
+        if (!copied) throw new Error("Clipboard access was unavailable.");
+      }
+      setOcrCopyStatus("Diagnostics copied. The report contains no authentication tokens.");
+    } catch {
+      setOcrCopyStatus("Could not copy automatically. You can select and copy the diagnostics text below.");
+    }
+  };
   return (
     <>
       <PageHeading
@@ -1720,6 +1772,8 @@ function ImportPage({
                     setOcrRawText("");
                     setOcrLanguages("");
                     setOcrReport(null);
+                    setOcrImageDiagnostics(null);
+                    setOcrCopyStatus("");
                     URL.revokeObjectURL(preview);
                     setPreview("");
                   }}
@@ -1764,6 +1818,34 @@ function ImportPage({
             {ocrState === "recognizing" && <p className="ocr-phase" role="status">Recognizing screenshot…</p>}
             {ocrState === "partial" && <p className="ocr-partial" role="status">Partial extraction — review the fields below. Missing values have not been filled in.</p>}
             {ocrState === "success" && <p className="ocr-success" role="status">Extraction successful. Review every field before confirming.</p>}
+            {file && (
+              <details className="ocr-diagnostics">
+                <summary>Mobile OCR diagnostics · {ocrState === "failed" ? "failed" : ocrReport?.languageEstimate ?? "not analyzed"}</summary>
+                <div className="ocr-diagnostics-content">
+                  <p><b>App version / commit:</b> {MYLVL_APP_VERSION} / {__MYLVL_BUILD_COMMIT__}</p>
+                  <p><b>Browser / platform:</b> {(navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform || navigator.platform || "Unknown"}</p>
+                  <p><b>User agent:</b> {navigator.userAgent || "Unavailable"}</p>
+                  <p><b>Installed PWA:</b> {window.matchMedia("(display-mode: standalone)").matches || ("standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone)) ? "yes" : "no"}</p>
+                  <p><b>OCR initialization / status:</b> {ocrState === "failed" ? `failed · ${ocrPhase || "unknown phase"}` : ocrLanguages ? "worker ready" : ocrPhase || "not started"}</p>
+                  <p><b>OCR languages:</b> {ocrLanguages || "English (eng) + German (deu), not loaded yet"}</p>
+                  <p><b>Image dimensions:</b> source {ocrImageDiagnostics ? `${ocrImageDiagnostics.sourceDimensions.width} × ${ocrImageDiagnostics.sourceDimensions.height}` : "not decoded"}; processed {ocrImageDiagnostics ? `${ocrImageDiagnostics.processedDimensions.width} × ${ocrImageDiagnostics.processedDimensions.height}` : "not prepared"}</p>
+                  <p><b>Preprocessing:</b> {ocrImageDiagnostics?.preprocessing || "not completed"}</p>
+                  <ul className="ocr-confidence-list">
+                    {([
+                      ["Date", draft?.date || "Missing; manual review required"],
+                      ["Distance", draft?.distance ? `${draft.distance} km` : "Missing; manual review required"],
+                      [effectiveStepSource === "measured" ? "Measured steps" : effectiveStepSource === "estimated" ? "Estimated steps" : "Steps", displayedSteps || "Unavailable"],
+                    ] as const).map(([label, value]) => <li key={label}><span>{label}</span><span>{value}</span></li>)}
+                  </ul>
+                  {ocrReport?.warnings.length ? <><b>Warnings</b><ul>{ocrReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></> : null}
+                  {ocrError && <p role="alert"><b>OCR error:</b> {ocrError}</p>}
+                  <b>Raw recognized text</b>
+                  <pre>{ocrRawText || "No text recognized yet."}</pre>
+                  <button className="secondary-button diagnostics-copy" type="button" onClick={() => void copyOcrDiagnostics()}><Copy size={15} /> Copy diagnostics</button>
+                  {ocrCopyStatus && <p role="status">{ocrCopyStatus}</p>}
+                </div>
+              </details>
+            )}
             {status && (
               <p
                 className={`inline-status${status.startsWith("Activity confirmed") ? " success" : ""}`}
@@ -1782,25 +1864,6 @@ function ImportPage({
                 </div>
                 {draft.uncertain.length > 0 && <p className="ocr-warning">Please review: {draft.uncertain.map((field) => fieldLabels[field] ?? field).join(", ")}.</p>}
                 {ocrConfidence !== null && <p className="ocr-confidence">Local OCR confidence: {Math.round(ocrConfidence)}% · Screenshot stays on this device.</p>}
-                {ocrReport && (
-                  <details className="ocr-diagnostics">
-                    <summary>OCR diagnostics · {ocrReport.languageEstimate}</summary>
-                    <div className="ocr-diagnostics-content">
-                      <p><b>OCR languages:</b> {ocrLanguages || "English (eng) + German (deu)"}</p>
-                      <p><b>Parser match score:</b> this is a label/context heuristic; the OCR engine score is shown above.</p>
-                      <ul className="ocr-confidence-list">
-                        {Object.entries(ocrReport.fieldConfidence).filter(([field]) => field !== "elevation").map(([field, value]) => (
-                          <li key={field}><span>{fieldLabels[field] ?? field}</span><span>{value === null ? "No reliable match" : value + "%"} · {ocrReport.fieldSources[field] || "no label"}</span></li>
-                        ))}
-                      </ul>
-                      {ocrReport.warnings.length > 0 && <><b>Warnings</b><ul>{ocrReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></>}
-                      <b>Parsed fields</b>
-                      <pre>{JSON.stringify(Object.fromEntries(Object.entries(draft).filter(([field]) => field !== "elevation")), null, 2)}</pre>
-                      <b>Raw recognized text</b>
-                      <pre>{ocrRawText || "No text recognized."}</pre>
-                    </div>
-                  </details>
-                )}
                 {possibleDuplicate && <p className="ocr-warning">Similar saved activity: {possibleDuplicate.type}, {possibleDuplicate.distance ?? "?"} km, {formatDate(possibleDuplicate.date)}. Duplicate import is blocked.</p>}
                 <div className="form-grid">
                   <label className="field-label">

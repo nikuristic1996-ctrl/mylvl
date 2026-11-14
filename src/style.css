@@ -2698,6 +2698,15 @@ a {
   overflow-wrap: anywhere;
 }
 .confirm-import:disabled { opacity: 0.58; cursor: not-allowed; }
+.diagnostics-copy {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
 
 
 .pwa-update-banner { position: fixed; z-index: 60; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 24px); padding: 10px 12px 10px 16px; border: 1px solid #3b414b; border-radius: 14px; background: #1b1f27; box-shadow: 0 12px 35px #0009; color: #f3f3ef; font-size: 14px; }

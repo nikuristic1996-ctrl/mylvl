@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseActivityScreenshot, parseActivityScreenshotDetailed, parseLocalizedNumber, resolveTesseractApi, screenshotFileError } from "../src/screenshotOcr.ts";
+import { calculatePreprocessDimensions, parseActivityScreenshot, parseActivityScreenshotDetailed, parseLocalizedNumber, resolveTesseractApi, screenshotFileError } from "../src/screenshotOcr.ts";
 
 test("resolves Tesseract createWorker from CommonJS interop default export", () => {
   const createWorker = async () => ({ recognize() {}, setParameters() {}, terminate() {} });
@@ -149,6 +149,42 @@ test("Garmin German treadmill OCR tolerates metric labels after their values", (
   assert.equal(parsed.draft.calories, "544");
   assert.equal(parsed.draft.date, "");
   assert.ok(parsed.draft.uncertain.includes("calories"));
+});
+
+test("German Garmin mobile text reads decimal-comma distance and grouped measured steps without guessing a year", () => {
+  const parsed = parseActivityScreenshotDetailed("Garmin Laufbandtraining · 12. Nov. @ 19:04 · 6,34 km Distanz · 8.432 Schritte · 7:17 /km Durchschnittspace · 45:31 Gesamtzeit");
+  assert.equal(parsed.draft.type, "Running");
+  assert.equal(parsed.draft.distance, "6.34");
+  assert.equal(parsed.draft.steps, "8432");
+  assert.equal(parsed.draft.date, "");
+  assert.ok(parsed.warnings.some((warning) => warning.includes("without a year")));
+});
+
+test("real Garmin German OCR sample preserves distance and pace but leaves yearless activity date blank", () => {
+  const raw = "15:59 m BN Ree & Laufbandtraining : Übersicht Statistiken Intervalle Diagramme A A] 12. Nov. @ 19:04 a W 1 Do. Tempo - Tempo 2-1-1 (6k # Notizen hinzufügen 6,34 km Distanz 157 bpm @ 7:17 /km @ @ Herzfrequenz @ Pace 45:31 544 Gesamtzeit Gesamtkalorien L&I Foto Teilen Evaluierung Pace (Hoch Aerob) Hauptnutzen Normal Befinden Mäßig Empfundene 3/10 Anstrengung";
+  const parsed = parseActivityScreenshotDetailed(raw);
+  assert.equal(parsed.draft.type, "Running");
+  assert.equal(parsed.draft.distance, "6.34");
+  assert.equal(parsed.draft.pace, "7:17 min/km");
+  assert.equal(parsed.draft.date, "");
+  assert.ok(parsed.warnings.some((warning) => warning.includes("without a year")));
+});
+
+test("English Garmin step counts accept comma grouping and labels on the next line", () => {
+  const parsed = parseActivityScreenshotDetailed("Garmin Running\nDistance 6.3 km\nSteps\n12,480\nDate 2026-11-12");
+  assert.equal(parsed.draft.distance, "6.3");
+  assert.equal(parsed.draft.steps, "12480");
+  assert.equal(parsed.draft.date, "2026-11-12");
+});
+
+test("mobile image sizing bounds large screenshots and gently enlarges tiny text", () => {
+  const large = calculatePreprocessDimensions(4000, 3000);
+  assert.ok(large.width <= 3200 && large.height <= 3200);
+  assert.ok(large.width * large.height <= 4_500_000);
+  const small = calculatePreprocessDimensions(480, 800);
+  assert.ok(small.width > 480 && small.height > 800);
+  assert.ok(small.width * small.height <= 4_500_000);
+  assert.throws(() => calculatePreprocessDimensions(0, 800), /invalid image dimensions/i);
 });
 
 test("meters are converted to kilometers, while elevation meters are not mistaken for distance", () => {
