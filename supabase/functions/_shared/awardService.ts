@@ -4,6 +4,7 @@ import {
   type ActivityType,
   type ActivityXpResult,
 } from "./gameEngine.ts";
+import { parseCameraExerciseSubmission } from "./cameraValidation.ts";
 
 export type ReservedActivity = {
   duplicate: boolean;
@@ -40,7 +41,9 @@ export function prepareAward(
   if (reservation.status !== "pending" || !reservation.activity) return null;
   const row = reservation.activity;
   const type: ActivityType | null = normalizeActivityType(row.activity_type);
-  const source = row.source === "screenshot" ? "screenshot" : row.source === "manual" ? "manual" : null;
+  const source = row.source === "screenshot" ? "screenshot"
+    : row.source === "manual" ? "manual"
+    : row.source === "camera" ? "camera" : null;
   const demo = Boolean((row.metadata as Record<string, unknown> | undefined)?.demo);
   if (!type || !source) {
     return {
@@ -49,12 +52,24 @@ export function prepareAward(
     };
   }
 
+  const cameraMeta = (row.metadata as Record<string, unknown> | undefined)?.exercise_validation;
+  const cameraSubmission = source === "camera" ? parseCameraExerciseSubmission(cameraMeta) : null;
+  if (source === "camera" && ((type !== "pushups" && type !== "squats") || !cameraSubmission
+    || !cameraSubmission.ok || cameraSubmission.value.sessionId !== requestKey
+    || row.source_key !== requestKey || row.validation_status !== "pose_validated")) {
+    return { requestKey, status: "ineligible", xp: 0, validationStatus: "rejected", ruleVersion: null,
+      metadata: { reason: "invalid_camera_validation_metadata" } };
+  }
+  const camera = source === "camera" && cameraSubmission?.ok ? cameraSubmission.value : null;
+
   const result = calculateActivityXp({
     type,
     source,
     demo,
     screenshotConfirmed: row.validation_status === "user_confirmed",
-    recordedSession: false,
+    recordedSession: source === "camera",
+    exerciseValidation: camera ? { detectedAmount: camera.detectedReps, userEstimate: camera.reportedReps,
+      confidence: camera.confidence, minimumConfidence: 0.75 } : undefined,
     dailyMetricBefore: numeric(reservation.daily_metric_before) ?? 0,
     dailyStepsReconciled: false,
     metrics: {
@@ -71,7 +86,7 @@ export function prepareAward(
   const validationStatus = demo
     ? "demo"
     : status === "eligible"
-      ? result.validation === "user-confirmed" ? "user_confirmed" : "provider_verified"
+      ? result.validation === "user-confirmed" ? "user_confirmed" : result.validation === "pose-validated" ? "pose_validated" : "provider_verified"
       : status === "requires-review" ? "pending_review" : "rejected";
   return {
     requestKey,
@@ -85,7 +100,9 @@ export function prepareAward(
       validation: result.validation,
       reason: result.reason ?? null,
       warnings: result.warnings,
-      validation_method: demo ? "demo_extraction" : result.validation === "user-confirmed" ? "screenshot_user_confirmation" : "not_verified",
+      validation_method: demo ? "demo_extraction" : result.validation === "user-confirmed"
+        ? "screenshot_user_confirmation" : result.validation === "pose-validated" ? "local_pose_landmarks" : "not_verified",
+      ...(camera ? { exercise_validation: camera } : {}),
     },
   };
 }
