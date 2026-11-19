@@ -2,6 +2,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { finishAward, prepareAward, type ReservedActivity } from "../_shared/awardService.ts";
 import { normalizeActivityType } from "../_shared/gameEngine.ts";
+import { parseCameraExerciseSubmission } from "../_shared/cameraValidation.ts";
 
 import { corsHeaders, isOriginAllowed } from "../_shared/cors.ts";
 const corsSettings = {
@@ -61,6 +62,24 @@ Deno.serve(async (request: Request) => {
     if (!activityType) return json({ error: "Unknown or unsupported activity type." }, 400, origin);
 
     // Whitelist client fields. Any client-submitted XP, validation status, or level is ignored.
+    const cameraResult = incoming.source === "camera" ? parseCameraExerciseSubmission(incoming.exerciseSession) : null;
+    let cameraData = null;
+    if (incoming.source === "camera") {
+      if ((activityType !== "pushups" && activityType !== "squats") || !cameraResult?.ok) {
+        return json({ error: cameraResult && !cameraResult.ok ? cameraResult.error : "Camera sessions only support push-ups and squats." }, 400, origin);
+      }
+      cameraData = cameraResult.value;
+      if (requestKey !== cameraData.sessionId || incoming.sourceKey !== cameraData.sessionId) {
+        return json({ error: "Camera session and idempotency keys must match." }, 400, origin);
+      }
+      const sessionDate = new Date(String(incoming.date ?? ""));
+      if (!Number.isFinite(sessionDate.getTime()) || Math.abs(Date.now() - sessionDate.getTime()) > 15 * 60_000) {
+        return json({ error: "Camera exercise sessions must be submitted close to their recording time." }, 400, origin);
+      }
+    }
+    if (incoming.source !== "manual" && incoming.source !== "screenshot" && incoming.source !== "camera") {
+      return json({ error: "Provider activities must enter through their authenticated server integration." }, 400, origin);
+    }
     const activity = {
       activity_type: activityType,
       activity_date: incoming.date,
@@ -70,13 +89,14 @@ Deno.serve(async (request: Request) => {
       steps: incoming.steps,
       calories: incoming.calories,
       active_calories: incoming.activeCalories,
-      repetitions: incoming.repetitions ?? incoming.reps,
+      repetitions: cameraData ? cameraData.detectedReps : incoming.repetitions ?? incoming.reps,
       hold_seconds: incoming.holdSeconds,
       notes: incoming.notes,
       source: incoming.source,
       source_key: incoming.sourceKey,
       screenshot_confirmed: incoming.source === "screenshot" && incoming.screenshotConfirmed === true,
       demo: incoming.demo === true,
+      exercise_validation: cameraData ?? undefined,
     };
     if (activity.source === "screenshot") {
       const date = new Date(String(activity.activity_date ?? ""));
@@ -88,12 +108,13 @@ Deno.serve(async (request: Request) => {
       if (!Number.isFinite(duration) || duration <= 0 || duration > 1440) {
         return json({ error: "Activity duration must be between 1 minute and 24 hours." }, 400, origin);
       }
-      const requiresDistance = activity.activity_type === "Running" || activity.activity_type === "Cycling" || activity.activity_type === "Swimming";
+      const requiresDistance = activity.activity_type === "running" || activity.activity_type === "cycling" || activity.activity_type === "swimming";
       if ((requiresDistance && (!Number.isFinite(distance) || distance <= 0)) || (Number.isFinite(distance) && distance > 1000)) {
         return json({ error: "Activity distance must be greater than 0 and no more than 1,000 km." }, 400, origin);
       }
     }
-    const { data: rawReservation, error: reserveError } = await adminClient.rpc("reserve_screenshot_activity_award", {
+    const reserveFunction = activity.source === "camera" ? "reserve_camera_exercise_award" : "reserve_screenshot_activity_award";
+    const { data: rawReservation, error: reserveError } = await adminClient.rpc(reserveFunction, {
       p_user_id: authData.user.id,
       p_request_key: requestKey,
       p_activity: activity,
