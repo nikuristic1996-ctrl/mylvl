@@ -13,6 +13,20 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,17 +45,14 @@ jobs:
           supabase/functions/_shared/cameraValidation.ts
           supabase/functions/_shared/awardService.ts
           src/poseRecognition.ts src/poseRuntime.ts src/ExerciseCamera.tsx
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Start disposable local Supabase and apply all migrations
+      - name: Apply Phase 6 migration to disposable PostgreSQL and verify it
         run: |
-          supabase start -x studio,imgproxy,inbucket,storage-api,realtime,analytics,vector,supavisor
-          supabase db reset --local
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/phase6-baseline.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261118110000_phase_6_camera_exercise.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/phase6-migration-assertions.sql
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phase6-generated-lockfile
           path: package-lock.json
           if-no-files-found: ignore
-
