@@ -26,9 +26,9 @@ begin
       and tablename in ('profiles','activities','activity_award_attempts')) <> 4 then
     raise exception 'Existing owner RLS policies were not preserved';
   end if;
-  if not row_security_active('public.activities') then
-    raise exception 'Activity RLS is not enabled';
-  end if;
+  if not exists (
+    select 1 from pg_class where oid='public.activities'::regclass and relrowsecurity
+  ) then raise exception 'Activity RLS is not enabled'; end if;
   if has_function_privilege('anon', fn, 'EXECUTE')
      or has_function_privilege('authenticated', fn, 'EXECUTE')
      or not has_function_privilege('service_role', fn, 'EXECUTE') then
