@@ -6,7 +6,7 @@ import { stopCameraTracks } from "../src/poseRuntime.ts";
 import { prepareAward } from "../supabase/functions/_shared/awardService.ts";
 import { readFile } from "node:fs/promises";
 
-const cameraMigration = await readFile(new URL("../supabase/migrations/20261118110000_phase_6_camera_exercise.sql", import.meta.url), "utf8");
+const cameraMigration = await readFile(new URL("../supabase/migrations/20261119230337_phase_6_camera_exercise.sql", import.meta.url), "utf8");
 const awardEdge = await readFile(new URL("../supabase/functions/award-activity/index.ts", import.meta.url), "utf8");
 
 const valid = (overrides={}) => ({

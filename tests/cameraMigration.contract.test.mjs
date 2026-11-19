@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const migration = await readFile(new URL("../supabase/migrations/20261118110000_phase_6_camera_exercise.sql", import.meta.url), "utf8");
+const migration = await readFile(new URL("../supabase/migrations/20261119230337_phase_6_camera_exercise.sql", import.meta.url), "utf8");
 
 test("camera migration only expands the existing activity source constraint", () => {
   assert.match(migration, /alter table public\.activities\s+drop constraint if exists activities_source_check/i);
@@ -24,4 +24,3 @@ test("camera reservation enforces exercise limits and recent timestamps", () => 
   assert.match(migration, /abs\(v_reported - v_detected\)::numeric \/ greatest\(1,v_detected\) > 0\.10/i);
   assert.match(migration, /abs\(extract\(epoch from \(now\(\) - v_date\)\)\) > 900/i);
 });
-

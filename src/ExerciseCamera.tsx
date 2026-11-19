@@ -44,6 +44,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const lastInferenceRef = useRef(0);
   const lastShownSecondRef = useRef(-1);
   const lastPositionRef = useRef(false);
+  const liveRepsRef = useRef(0);
   const startRef = useRef(0);
   const runningRef = useRef(false);
   const stageRef = useRef<Stage>("setup");
@@ -55,6 +56,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const [cameraLive, setCameraLive] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const [elapsed, setElapsed] = useState(0);
+  const [liveReps, setLiveReps] = useState(0);
   const [reported, setReported] = useState("");
   const [analysis, setAnalysis] = useState<ReturnType<ExerciseRepRecognizer["finish"]> | null>(null);
   const [comparison, setComparison] = useState<ReturnType<typeof validateExerciseEstimate> | null>(null);
@@ -95,6 +97,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     if (stage !== "countdown") return;
     if (countdown <= 0) {
       recognizerRef.current = new ExerciseRepRecognizer(exercise);
+      liveRepsRef.current = 0; setLiveReps(0);
       startRef.current = performance.now(); lastInferenceRef.current = 0;
       runningRef.current = true; setStage("recording"); return;
     }
@@ -117,7 +120,13 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
           const landmarks = runtimeRef.current.detect(videoRef.current, now);
           const visible = hasVisibleBody(landmarks, exercise);
           if (visible !== lastPositionRef.current) { lastPositionRef.current = visible; setPositionReady(visible); }
-          if (landmarks && stage === "recording") recognizerRef.current?.process({ landmarks, width: videoRef.current.videoWidth, height: videoRef.current.videoHeight, timestampMs: now });
+          if (landmarks && stage === "recording") {
+            const result = recognizerRef.current?.process({ landmarks, width: videoRef.current.videoWidth, height: videoRef.current.videoHeight, timestampMs: now });
+            if (result && result.repetitions !== liveRepsRef.current) {
+              liveRepsRef.current = result.repetitions;
+              setLiveReps(result.repetitions);
+            }
+          }
         } catch (cause) { setError(cameraErrorMessage(cause)); stopSession(); setStage("error"); }
       }
       if (Math.floor((now - startRef.current) / 1000) >= CAMERA_RECORDING_LIMIT_SECONDS) stopSession();
@@ -205,14 +214,15 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     <div className="camera-preview-wrap">
       <video ref={videoRef} className={facing === "user" ? "camera-preview mirrored" : "camera-preview"} playsInline muted aria-label="Live camera preview" />
       {!cameraLive && <div className="camera-placeholder"><Camera size={26}/><span>Camera preview will appear here.</span></div>}
-      {(stage === "countdown" || stage === "recording") && <div className="camera-status-pill">{stage === "countdown" ? `Ready in ${countdown}` : `Recording · ${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")}`}</div>}
+      {(stage === "countdown" || stage === "recording") && <div className="camera-status-pill">{stage === "countdown" ? `Ready in ${countdown}` : `Recording · ${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")} · ${liveReps} reps`}</div>}
     </div>
     <div className={`camera-position ${positionReady ? "ready" : ""}`}><span className="camera-state-dot"/>{positionReady ? "Body visible — hold a steady side view." : "Position your whole body side-on, with good light and space around you."}</div>
     <div className="camera-note"><Shield size={16}/><span>Local recognition is a helpful estimate, not tamper-proof proof or professional form assessment. Maximum analysis time: 90 seconds. Performance metrics may be provided by the model host; video frames stay on your device.</span></div>
-    <div className="camera-controls">
+    {stage === "recording" && <div className="camera-recording-guidance" role="status" aria-live="polite"><strong>Live count: {liveReps} reps</strong><span>Movement is analyzed as you go. When your set is done, tap “Finish set &amp; analyze” below. Next, enter your count, compare it, and confirm to save. Nothing is saved yet.</span></div>}
+    <div className={`camera-controls ${stage === "recording" ? "is-recording" : ""}`}>
       {stage === "setup" && <><label>Camera<select value={facing} onChange={(e) => setFacing(e.target.value as "user"|"environment")}><option value="environment">Rear camera</option><option value="user">Front camera</option></select></label><button className="primary-button" onClick={() => void startCamera()}>{cameraLive ? "Reload camera" : "Enable camera"}</button>{cameraLive && runtimeRef.current && <button className="primary-button" onClick={() => { if (!positionReady) { setError("Make sure your body is visible before you start."); return; } setError(""); setCountdown(3); setStage("countdown"); }}>Start · 3-second countdown</button>}</>}
       {stage === "countdown" && <button className="secondary-button" onClick={() => setStage("setup")}>Cancel countdown</button>}
-      {stage === "recording" && <><span>Pose engine: {runtimeStatus} · no video file is created</span><button className="primary-button" onClick={stopSession}>Stop and review</button><button className="secondary-button" onClick={() => { runningRef.current = false; cleanup(); setCameraLive(false); setAnalysis(null); setStage("setup"); }}>Cancel session</button></>}
+      {stage === "recording" && <><span>Pose engine: {runtimeStatus} · no video file is created</span><button className="primary-button" onClick={stopSession}>Finish set &amp; analyze</button><button className="secondary-button" onClick={() => { runningRef.current = false; cleanup(); setCameraLive(false); setAnalysis(null); setStage("setup"); }}>Cancel session</button></>}
       {stage === "report" && <><label className="field-label">How many did you complete? Enter your count before seeing the detected result.<input type="number" min="1" step="1" inputMode="numeric" value={reported} onChange={(e) => setReported(e.target.value)} /></label><button className="primary-button" disabled={!Number.isSafeInteger(Number(reported)) || Number(reported) <= 0} onClick={validate}>Compare and validate</button><button className="secondary-button" onClick={() => void retry()}><RotateCcw size={15}/> Retry recording</button></>}
       {stage === "result" && <><div className="camera-result"><b>Detected {analysis?.repetitions} · You reported {reported}</b><span>Pose confidence {Math.round((analysis?.confidence ?? 0) * 100)}% · usable frames {analysis?.usableFrames}/{analysis?.totalFrames}</span><span className={comparison?.status === "accepted" ? "camera-success" : "camera-warning"}>{comparison?.status === "accepted" ? `Validated · ${comparison.deviationPercent?.toFixed(1)}% difference` : `Not validated · ${comparison?.status}${comparison?.deviationPercent == null ? "" : ` · ${comparison.deviationPercent.toFixed(1)}% difference`}`}</span>{analysis?.warnings.map((warning) => <small key={warning}>{warning}</small>)}</div>{comparison?.status === "accepted" ? <><div className="camera-result"><b>Estimated reward: {expPreview} EXP</b><span>Server recalculates this using the existing activity rates and daily limits.</span></div><button className="primary-button" disabled={busy} onClick={() => void confirmActivity()}><Check size={16}/> {busy ? "Saving…" : "Confirm activity"}</button></> : <p className="camera-warning">No EXP is awarded. Retry with a clear side view and a complete movement cycle.</p>}<button className="secondary-button" onClick={() => void retry()}><RotateCcw size={15}/> Retry</button></>}
       {stage === "error" && <><div className="camera-warning" role="alert">{error}</div><button className="primary-button" onClick={() => void startCamera()}>Retry camera</button></>}
