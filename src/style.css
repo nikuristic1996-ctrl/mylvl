@@ -2982,8 +2982,8 @@ a {
 
 
 .camera-entry-button { width: 100%; margin: 14px 0; }
-.camera-scrim { z-index: 80; overflow-y: auto; align-items: flex-start; padding: max(14px, env(safe-area-inset-top)) 12px max(18px, env(safe-area-inset-bottom)); }
-.exercise-camera { width: min(620px, 100%); max-height: calc(100dvh - 36px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.camera-scrim { z-index: 80; overflow: hidden; align-items: center; padding: max(14px, env(safe-area-inset-top)) 12px max(18px, env(safe-area-inset-bottom)); }
+.exercise-camera { width: min(620px, 100%); max-height: calc(100dvh - max(14px, env(safe-area-inset-top)) - max(18px, env(safe-area-inset-bottom))); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .camera-exercise-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
 .camera-exercise-tabs button, .camera-controls select { min-height: 44px; border: 1px solid var(--border, #303543); border-radius: 10px; background: #171a22; color: #f4f6fa; padding: 10px 12px; }
 .camera-exercise-tabs button.active { border-color: #b7f56a; color: #c7ff79; }
