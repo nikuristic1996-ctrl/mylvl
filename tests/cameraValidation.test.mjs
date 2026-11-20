@@ -7,6 +7,7 @@ import { prepareAward } from "../supabase/functions/_shared/awardService.ts";
 import { readFile } from "node:fs/promises";
 
 const cameraMigration = await readFile(new URL("../supabase/migrations/20261119230337_phase_6_camera_exercise.sql", import.meta.url), "utf8");
+const toleranceMigration = await readFile(new URL("../supabase/migrations/20261120012347_camera_rep_tolerance.sql", import.meta.url), "utf8");
 const awardEdge = await readFile(new URL("../supabase/functions/award-activity/index.ts", import.meta.url), "utf8");
 
 const valid = (overrides={}) => ({
@@ -25,17 +26,17 @@ test("camera submission uses the Phase 1 detected-count denominator for the 10 p
 
 test("rejects zero, weak confidence, poor frames, excessive duration and mismatched deviation", () => {
   for (const value of [
-    valid({reportedReps:0}), valid({detectedReps:0}), valid({confidence:0.74}),
+    valid({reportedReps:0}), valid({detectedReps:0}), valid({confidence:0.59}),
     valid({usableFrames:11}), valid({usableRatio:0.64}), valid({recordingDurationSeconds:91}),
     valid({deviationPercent:22}), valid({sessionId:"not-a-uuid"}), valid({reportedReps:501}),
   ]) assert.equal(parseCameraExerciseSubmission(value).ok,false);
 });
 
 test("server engine awards from detected repetitions only and applies cap returns", () => {
-  const args={type:"pushups",source:"camera",recordedSession:true,metrics:{repetitions:999},exerciseValidation:{detectedAmount:29,userEstimate:30,confidence:0.92,minimumConfidence:0.75}};
+  const args={type:"pushups",source:"camera",recordedSession:true,metrics:{repetitions:999},exerciseValidation:{detectedAmount:29,userEstimate:30,confidence:0.92,minimumConfidence:0.60}};
   assert.equal(calculateActivityXp(args).xp,145);
   assert.equal(calculateActivityXp({...args,dailyMetricBefore:95}).xp,55);
-  const squat={...args,type:"squats",metrics:{repetitions:1000},exerciseValidation:{detectedAmount:40,userEstimate:40,confidence:0.92,minimumConfidence:0.75}};
+  const squat={...args,type:"squats",metrics:{repetitions:1000},exerciseValidation:{detectedAmount:40,userEstimate:40,confidence:0.92,minimumConfidence:0.60}};
   assert.equal(calculateActivityXp(squat).xp,120);
 });
 
@@ -77,3 +78,10 @@ test("Edge Function authenticates before reserving camera awards and never accep
   assert.doesNotMatch(awardEdge, /incoming\.xp/);
 });
 
+
+test("production tolerance migration changes validation only and keeps awards based on detected reps", () => {
+  assert.match(toleranceMigration, /v_confidence < 0\.60/);
+  assert.match(toleranceMigration, /greatest\(1,v_reported,v_detected\) > 0\.50/);
+  assert.match(toleranceMigration, /v_metric_amount := v_detected/);
+  assert.doesNotMatch(toleranceMigration, /\b(drop\s+table|truncate\s+|delete\s+from)\b/i);
+});
