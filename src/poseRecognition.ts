@@ -1,4 +1,5 @@
 export type ExerciseKind = "pushups" | "squats";
+export type CameraPerspective = "side" | "diagonal-front";
 export type PoseLandmark = { x: number; y: number; visibility?: number; presence?: number };
 export type PoseFrame = { landmarks: PoseLandmark[]; width: number; height: number; timestampMs: number };
 export type RepPhase = "find-start" | "ready" | "lowering" | "bottom" | "rising";
@@ -66,6 +67,7 @@ function median(values: number[]) {
 export class ExerciseRepRecognizer {
   readonly modelVersion = POSE_VERSION;
   private readonly kind: ExerciseKind;
+  private readonly perspective: CameraPerspective;
   private phase: RepPhase = "find-start";
   private reps = 0;
   private totalFrames = 0;
@@ -79,7 +81,7 @@ export class ExerciseRepRecognizer {
   private firstTimestamp = 0;
   private sawPartial = false;
 
-  constructor(kind: ExerciseKind) { this.kind = kind; }
+  constructor(kind: ExerciseKind, perspective: CameraPerspective = "side") { this.kind = kind; this.perspective = perspective; }
 
   get repetitions() { return this.reps; }
   get currentPhase() { return this.phase; }
@@ -115,7 +117,7 @@ export class ExerciseRepRecognizer {
       const wristPoint = point(frame.landmarks, wristIndex, frame.width, frame.height)!;
       angle = jointAngle(shoulderPoint, elbowPoint, wristPoint);
       alignment = jointAngle(shoulderPoint, hipPoint, anklePoint);
-      if (alignment < 135) return this.invalidFrame("Keep shoulders, hips and ankles in a steady line.");
+      if (this.perspective === "side" && alignment < 135) return this.invalidFrame("Keep shoulders, hips and ankles in a steady line.");
     } else {
       angle = jointAngle(hipPoint, kneePoint, anklePoint);
     }
@@ -124,7 +126,7 @@ export class ExerciseRepRecognizer {
     const filtered = median(this.angleWindow);
     this.usableFrames++;
     this.confidenceSum += visibilities.reduce((sum, score) => sum + score, 0) / visibilities.length;
-    this.updatePhase(filtered, alignment, frame.timestampMs);
+    this.updatePhase(filtered, this.perspective === "diagonal-front" ? 180 : alignment, frame.timestampMs);
     return { usable: true, phase: this.phase, repetitions: this.reps, confidence: this.currentConfidence() };
   }
 
