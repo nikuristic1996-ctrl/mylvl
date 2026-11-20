@@ -79,6 +79,7 @@ export class ExerciseRepRecognizer {
   private cycleStartAngle = 0;
   private cycleStartBodyY: number | null = null;
   private cycleBodyTravel = 0;
+  private frontTopAngle: number | null = null;
   private lowestAngle = 180;
   private firstTimestamp = 0;
   private sawPartial = false;
@@ -220,8 +221,14 @@ export class ExerciseRepRecognizer {
   }
 
   private updatePhase(angle: number, alignment: number, now: number, bodyY?: number) {
-    const startAngle = this.kind === "pushups" ? 155 : 155;
-    const bottomAngle = this.kind === "pushups" ? 95 : 100;
+    const frontPushup = this.kind === "pushups" && this.perspective !== "side";
+    if (frontPushup && this.phase === "find-start" && angle >= 115) {
+      this.frontTopAngle = Math.max(this.frontTopAngle ?? 0, angle);
+    }
+    const startAngle = frontPushup
+      ? Math.max(120, Math.min(165, (this.frontTopAngle ?? 155) - 8))
+      : 155;
+    const bottomAngle = frontPushup ? Math.max(72, startAngle - 40) : this.kind === "pushups" ? 95 : 100;
     if ((this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") && now - this.cycleStartMs > MAX_REP_MS) {
       this.phase = "find-start";
       this.sawPartial = true;
@@ -232,7 +239,7 @@ export class ExerciseRepRecognizer {
         break;
       case "ready":
         if (bodyY !== undefined) this.cycleStartBodyY = bodyY;
-        if (angle <= startAngle - 18) {
+        if (angle <= startAngle - (frontPushup ? 14 : 18)) {
           this.phase = "lowering";
           this.cycleBodyTravel = 0;
           this.cycleStartBodyY = bodyY ?? this.cycleStartBodyY;
@@ -252,17 +259,18 @@ export class ExerciseRepRecognizer {
       case "bottom":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
-        if (angle >= bottomAngle + 22) this.phase = "rising";
+        if (angle >= bottomAngle + (frontPushup ? 15 : 22)) this.phase = "rising";
         break;
       case "rising":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
         if (angle <= bottomAngle) this.phase = "bottom";
-        else if (angle >= startAngle && alignment >= 135) {
+        else if (angle >= startAngle - (frontPushup ? 5 : 0) && alignment >= 135) {
           const cycleDuration = now - this.cycleStartMs;
           const movementRange = this.cycleStartAngle - this.lowestAngle;
-          const upperBodyMoved = this.perspective === "side" || this.cycleBodyTravel >= 0.015;
-          if (cycleDuration >= MIN_REP_MS && movementRange >= 50 && upperBodyMoved) this.reps++;
+          const upperBodyMoved = !frontPushup || movementRange >= 45 || this.cycleBodyTravel >= 0.008;
+          const requiredRange = frontPushup ? 35 : 50;
+          if (cycleDuration >= MIN_REP_MS && movementRange >= requiredRange && upperBodyMoved) this.reps++;
           else this.sawPartial = true;
           this.phase = "ready";
         }
