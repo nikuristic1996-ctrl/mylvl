@@ -30,11 +30,11 @@ function frontPushupFrame(angle, timestampMs, bodyShift = angle < 150 ? Math.min
   const shoulderY = 0.35 + bodyShift;
   points[0] = { x: 0.5, y: 0.24 + bodyShift, visibility };
   points[11] = { x: 0.36, y: shoulderY, visibility };
-  points[13] = { x: 0.42, y: shoulderY + 0.06, visibility };
-  points[15] = { x: 0.42 + 0.08 * Math.cos((180 - angle) * Math.PI / 180), y: shoulderY + 0.06 + 0.08 * Math.sin((180 - angle) * Math.PI / 180), visibility };
+  points[13] = { x: 0.42, y: shoulderY, visibility };
+  points[15] = { x: 0.42 + 0.08 * Math.cos((180 - angle) * Math.PI / 180), y: shoulderY + 0.08 * Math.sin((180 - angle) * Math.PI / 180), visibility };
   points[12] = { x: 0.64, y: shoulderY, visibility };
-  points[14] = { x: 0.58, y: shoulderY + 0.06, visibility };
-  points[16] = { x: 0.58 + 0.08 * Math.cos(angle * Math.PI / 180), y: shoulderY + 0.06 + 0.08 * Math.sin(angle * Math.PI / 180), visibility };
+  points[14] = { x: 0.58, y: shoulderY, visibility };
+  points[16] = { x: 0.58 + 0.08 * Math.cos(angle * Math.PI / 180), y: shoulderY + 0.08 * Math.sin(angle * Math.PI / 180), visibility };
   return { landmarks: points, width: 640, height: 480, timestampMs };
 }
 
