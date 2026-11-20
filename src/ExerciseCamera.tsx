@@ -59,7 +59,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const stageRef = useRef<Stage>("setup");
   const [exercise, setExercise] = useState<ExerciseKind>("pushups");
   const [perspective, setPerspective] = useState<CameraPerspective>("front");
-  const [facing, setFacing] = useState<"user" | "environment">("environment");
+  const [facing, setFacing] = useState<"user" | "environment">("user");
   const [stage, setStage] = useState<Stage>("setup");
   const [runtimeStatus, setRuntimeStatus] = useState("Not loaded");
   const [positionReady, setPositionReady] = useState(false);
