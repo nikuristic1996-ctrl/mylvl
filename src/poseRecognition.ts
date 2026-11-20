@@ -91,7 +91,7 @@ export class ExerciseRepRecognizer {
   process(frame: PoseFrame): PoseFrameResult {
     this.totalFrames++;
     if (!this.firstTimestamp) this.firstTimestamp = frame.timestampMs;
-    if (!frame.width || !frame.height || frame.landmarks.length < 29) return this.invalidFrame("Keep your full body in the camera view.");
+    if (!frame.width || !frame.height || frame.landmarks.length < 29) return this.invalidFrame(this.kind === "pushups" && this.perspective !== "side" ? "Pose landmarks are incomplete for the front view." : "Keep your full body in the camera view.");
     if (this.kind === "pushups" && this.perspective !== "side") return this.processFrontPushup(frame);
     const side = bestSide(frame.landmarks, this.kind);
     const shoulder = INDEX[`${side}Shoulder` as "leftShoulder" | "rightShoulder"];
