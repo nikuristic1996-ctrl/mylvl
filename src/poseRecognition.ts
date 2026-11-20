@@ -1,5 +1,5 @@
 export type ExerciseKind = "pushups" | "squats";
-export type CameraPerspective = "side" | "diagonal-front";
+export type CameraPerspective = "side" | "front" | "diagonal-front";
 export type PoseLandmark = { x: number; y: number; visibility?: number; presence?: number };
 export type PoseFrame = { landmarks: PoseLandmark[]; width: number; height: number; timestampMs: number };
 export type RepPhase = "find-start" | "ready" | "lowering" | "bottom" | "rising";
@@ -77,6 +77,8 @@ export class ExerciseRepRecognizer {
   private angleWindow: number[] = [];
   private cycleStartMs = 0;
   private cycleStartAngle = 0;
+  private cycleStartBodyY: number | null = null;
+  private cycleBodyTravel = 0;
   private lowestAngle = 180;
   private firstTimestamp = 0;
   private sawPartial = false;
@@ -89,7 +91,8 @@ export class ExerciseRepRecognizer {
   process(frame: PoseFrame): PoseFrameResult {
     this.totalFrames++;
     if (!this.firstTimestamp) this.firstTimestamp = frame.timestampMs;
-    if (!frame.width || !frame.height || frame.landmarks.length < 29) return this.invalidFrame("Keep your full body in the camera view.");
+    if (!frame.width || !frame.height || frame.landmarks.length < 29) return this.invalidFrame(this.kind === "pushups" && this.perspective !== "side" ? "Pose landmarks are incomplete for the front view." : "Keep your full body in the camera view.");
+    if (this.kind === "pushups" && this.perspective !== "side") return this.processFrontPushup(frame);
     const side = bestSide(frame.landmarks, this.kind);
     const shoulder = INDEX[`${side}Shoulder` as "leftShoulder" | "rightShoulder"];
     const hip = INDEX[`${side}Hip` as "leftHip" | "rightHip"];
@@ -130,6 +133,59 @@ export class ExerciseRepRecognizer {
     return { usable: true, phase: this.phase, repetitions: this.reps, confidence: this.currentConfidence() };
   }
 
+  private processFrontPushup(frame: PoseFrame): PoseFrameResult {
+    const noseIndex = 0;
+    const nose = frame.landmarks[noseIndex];
+    if (visibility(nose) < VISIBILITY_MIN || nose.x < 0.01 || nose.x > 0.99 || nose.y < 0.01 || nose.y > 0.99) {
+      return this.invalidFrame("Keep your head and shoulders visible in the front view.");
+    }
+    const arms = [
+      { side: "left", shoulder: INDEX.leftShoulder, elbow: INDEX.leftElbow, wrist: INDEX.leftWrist },
+      { side: "right", shoulder: INDEX.rightShoulder, elbow: INDEX.rightElbow, wrist: INDEX.rightWrist },
+    ].map((arm) => {
+      const indices = [arm.shoulder, arm.elbow, arm.wrist];
+      const points = indices.map((index) => frame.landmarks[index]);
+      const scores = indices.map((index) => visibility(frame.landmarks[index]));
+      const inFrame = points.every((item) => item.x >= 0.01 && item.x <= 0.99 && item.y >= 0.01 && item.y <= 0.99);
+      const usable = inFrame && scores.every((score) => score >= VISIBILITY_MIN);
+      const angle = usable ? jointAngle(
+        point(frame.landmarks, arm.shoulder, frame.width, frame.height)!,
+        point(frame.landmarks, arm.elbow, frame.width, frame.height)!,
+        point(frame.landmarks, arm.wrist, frame.width, frame.height)!,
+      ) : null;
+      return { ...arm, indices, scores, usable, angle, score: scores.reduce((sum, value) => sum + value, 0) / scores.length };
+    }).filter((arm) => arm.usable && arm.angle !== null);
+    if (!arms.length) return this.invalidFrame("Keep at least one complete arm, from shoulder to hand, in the camera view.");
+    const ordered = [...arms].sort((a, b) => b.score - a.score);
+    const selected = ordered.length > 1 && Math.abs(ordered[0].angle! - ordered[1].angle!) <= 40 ? ordered : [ordered[0]];
+    const angle = selected.reduce((sum, arm) => sum + arm.angle!, 0) / selected.length;
+    const leftShoulder = frame.landmarks[INDEX.leftShoulder];
+    const rightShoulder = frame.landmarks[INDEX.rightShoulder];
+    const visibleShoulders = [leftShoulder, rightShoulder].filter((item) => visibility(item) >= VISIBILITY_MIN);
+    const shoulderCenterY = visibleShoulders.length
+      ? visibleShoulders.reduce((sum, item) => sum + item.y * frame.height, 0) / visibleShoulders.length
+      : NaN;
+    const shoulderWidth = visibility(leftShoulder) >= VISIBILITY_MIN && visibility(rightShoulder) >= VISIBILITY_MIN
+      ? Math.hypot((leftShoulder.x - rightShoulder.x) * frame.width, (leftShoulder.y - rightShoulder.y) * frame.height)
+      : frame.width * 0.2;
+    const bodyY = ((nose.y * frame.height + shoulderCenterY) / 2) / Math.max(1, shoulderWidth);
+    if (!Number.isFinite(bodyY)) return this.invalidFrame("Keep your face and shoulders centered in the frame.");
+    const confidenceLandmarks = [...new Set([noseIndex, ...selected.flatMap((arm) => arm.indices),
+      ...[INDEX.leftShoulder, INDEX.rightShoulder].filter((index) => visibility(frame.landmarks[index]) >= VISIBILITY_MIN)])];
+    const scores = confidenceLandmarks.map((index) => visibility(frame.landmarks[index]));
+    const points = confidenceLandmarks.map((index) => frame.landmarks[index]);
+    if (points.some((item) => item.x < 0.01 || item.x > 0.99 || item.y < 0.01 || item.y > 0.99)) {
+      return this.invalidFrame("Keep your head, shoulders, arms and hands inside the guide.");
+    }
+    this.angleWindow.push(angle);
+    if (this.angleWindow.length > 3) this.angleWindow.shift();
+    const filtered = median(this.angleWindow);
+    this.usableFrames++;
+    this.confidenceSum += scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    this.updatePhase(filtered, 180, frame.timestampMs, bodyY);
+    return { usable: true, phase: this.phase, repetitions: this.reps, confidence: this.currentConfidence() };
+  }
+
   finish(recordingDurationSeconds: number): PoseAnalysis {
     const usableRatio = this.totalFrames ? this.usableFrames / this.totalFrames : 0;
     const confidence = this.currentConfidence();
@@ -151,13 +207,19 @@ export class ExerciseRepRecognizer {
     return { usable: false, phase: this.phase, repetitions: this.reps, confidence: this.currentConfidence(), warning };
   }
 
+  private recordBodyTravel(bodyY?: number) {
+    if (bodyY !== undefined && this.cycleStartBodyY !== null) {
+      this.cycleBodyTravel = Math.max(this.cycleBodyTravel, Math.abs(bodyY - this.cycleStartBodyY));
+    }
+  }
+
   private currentConfidence() {
     if (!this.totalFrames || !this.usableFrames) return 0;
     const meanVisibility = this.confidenceSum / this.usableFrames;
     return Math.max(0, Math.min(1, meanVisibility * (this.usableFrames / this.totalFrames)));
   }
 
-  private updatePhase(angle: number, alignment: number, now: number) {
+  private updatePhase(angle: number, alignment: number, now: number, bodyY?: number) {
     const startAngle = this.kind === "pushups" ? 155 : 155;
     const bottomAngle = this.kind === "pushups" ? 95 : 100;
     if ((this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") && now - this.cycleStartMs > MAX_REP_MS) {
@@ -166,11 +228,14 @@ export class ExerciseRepRecognizer {
     }
     switch (this.phase) {
       case "find-start":
-        if (angle >= startAngle && alignment >= 135) this.phase = "ready";
+        if (angle >= startAngle && alignment >= 135) { this.phase = "ready"; this.cycleStartBodyY = bodyY ?? null; }
         break;
       case "ready":
+        if (bodyY !== undefined) this.cycleStartBodyY = bodyY;
         if (angle <= startAngle - 18) {
           this.phase = "lowering";
+          this.cycleBodyTravel = 0;
+          this.cycleStartBodyY = bodyY ?? this.cycleStartBodyY;
           this.cycleStartMs = now;
           // Median smoothing can lag by two frames and cross this threshold
           // near the bottom. Anchor amplitude to the ready threshold.
@@ -179,21 +244,25 @@ export class ExerciseRepRecognizer {
         }
         break;
       case "lowering":
+        this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
         if (angle <= bottomAngle) this.phase = "bottom";
         else if (angle >= startAngle) this.phase = "ready";
         break;
       case "bottom":
+        this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
         if (angle >= bottomAngle + 22) this.phase = "rising";
         break;
       case "rising":
+        this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
         if (angle <= bottomAngle) this.phase = "bottom";
         else if (angle >= startAngle && alignment >= 135) {
           const cycleDuration = now - this.cycleStartMs;
           const movementRange = this.cycleStartAngle - this.lowestAngle;
-          if (cycleDuration >= MIN_REP_MS && movementRange >= 50) this.reps++;
+          const upperBodyMoved = this.perspective === "side" || this.cycleBodyTravel >= 0.015;
+          if (cycleDuration >= MIN_REP_MS && movementRange >= 50 && upperBodyMoved) this.reps++;
           else this.sawPartial = true;
           this.phase = "ready";
         }

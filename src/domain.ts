@@ -39,7 +39,7 @@ export type Activity = {
   exerciseSession?: {
     sessionId: string; reportedReps: number; detectedReps: number; confidence: number;
     validationMethod: string; recordingDurationSeconds: number; modelVersion: string;
-    validationVersion: string; cameraPerspective?: "side" | "diagonal-front"; usableFrames: number; usableRatio: number; deviationPercent: number | null;
+    validationVersion: string; cameraPerspective?: "side" | "front" | "diagonal-front"; usableFrames: number; usableRatio: number; deviationPercent: number | null;
   };
   sourceKey?: string;
   validationStatus?: ActivityValidationStatus;
