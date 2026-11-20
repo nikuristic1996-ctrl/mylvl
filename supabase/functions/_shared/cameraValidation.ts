@@ -15,7 +15,7 @@ export type CameraExerciseSubmission = {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const CAMERA_MAX_RECORDING_SECONDS = 90;
-export const CAMERA_MIN_CONFIDENCE = 0.65;
+export const CAMERA_MIN_CONFIDENCE = 0.60;
 export const CAMERA_MAX_REPETITIONS = 500;
 export const CAMERA_MODEL_VERSION = "pose_landmarker_lite_float16_v1";
 export const CAMERA_VALIDATION_VERSION = "mylvl-pose-v1";
