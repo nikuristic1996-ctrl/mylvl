@@ -2990,7 +2990,7 @@ a {
 .camera-perspectives button.active { border-color: #b7f56a; color: #c7ff79; background: #b7f56a12; }
 .camera-perspectives button:disabled { opacity: .65; }
 .camera-guide-overlay { position: absolute; inset: 12px; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; pointer-events: none; }
-.camera-guide-frame { width: 88%; height: 76%; border: 1.5px dashed #c7ff79b0; border-radius: 16px; background: linear-gradient(90deg, transparent 49.6%, #c7ff7924 50%, transparent 50.4%); display: grid; place-items: center; box-shadow: inset 0 0 0 1px #080a0e66; }
+.camera-guide-frame { width: 88%; height: 76%; border: 1.5px dashed #c7ff79b0; border-radius: 16px; background: radial-gradient(ellipse at center, #b7f56a12, transparent 68%); display: grid; place-items: center; box-shadow: inset 0 0 0 1px #080a0e66; }
 .camera-guide-frame svg { width: 68%; max-height: 60%; fill: none; stroke: #d8ffae; stroke-width: 3; opacity: .82; filter: drop-shadow(0 1px 4px #000); }
 .camera-guide-frame .guide-silhouette { fill: #b7f56a20; stroke: #d8ffae; stroke-width: 2.6; stroke-linejoin: round; }
 .camera-guide-frame .guide-center { fill: none; stroke: #d8ffae88; stroke-width: 1.4; stroke-dasharray: 4 4; }
