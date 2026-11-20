@@ -67,6 +67,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const [countdown, setCountdown] = useState(3);
   const [elapsed, setElapsed] = useState(0);
   const [liveReps, setLiveReps] = useState(0);
+  const [repStatus, setRepStatus] = useState("Waiting for a clear arm cycle.");
   const [reported, setReported] = useState("");
   const [analysis, setAnalysis] = useState<ReturnType<ExerciseRepRecognizer["finish"]> | null>(null);
   const [comparison, setComparison] = useState<ReturnType<typeof validateExerciseEstimate> | null>(null);
@@ -107,7 +108,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     if (stage !== "countdown") return;
     if (countdown <= 0) {
       recognizerRef.current = new ExerciseRepRecognizer(exercise, perspective);
-      liveRepsRef.current = 0; setLiveReps(0);
+      liveRepsRef.current = 0; setLiveReps(0); setRepStatus("Start with arms extended, then lower and push back up.");
       startRef.current = performance.now(); lastInferenceRef.current = 0;
       runningRef.current = true; setStage("recording"); return;
     }
@@ -132,9 +133,13 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
           if (visible !== lastPositionRef.current) { lastPositionRef.current = visible; setPositionReady(visible); }
           if (landmarks && stage === "recording") {
             const result = recognizerRef.current?.process({ landmarks, width: videoRef.current.videoWidth, height: videoRef.current.videoHeight, timestampMs: now });
-            if (result && result.repetitions !== liveRepsRef.current) {
-              liveRepsRef.current = result.repetitions;
-              setLiveReps(result.repetitions);
+            if (result) {
+              if (result.repetitions !== liveRepsRef.current) {
+                liveRepsRef.current = result.repetitions;
+                setLiveReps(result.repetitions);
+              }
+              const status = result.warning ? `Adjust: ${result.warning}` : `Tracking arm movement: ${result.phase}.`;
+              setRepStatus((previous) => previous === status ? previous : status);
             }
           }
         } catch (cause) { setError(cameraErrorMessage(cause)); stopSession(); setStage("error"); }
@@ -230,13 +235,13 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
       {!cameraLive && <div className="camera-placeholder"><Camera size={26}/><span>Camera preview will appear here.</span></div>}
       {stage === "setup" && <div className={`camera-guide-overlay ${perspective}`} aria-hidden="true">
         <div className="camera-guide-frame"><svg viewBox="0 0 240 120" focusable="false"><path className="guide-silhouette" d="M120 8c-10 0-17 8-17 18 0 8 4 14 11 17v5c-13 1-25 4-32 10-5 4-10 11-15 20L49 96c-3 5 0 10 5 10 3 0 5-2 7-5l19-22 15-16-6 24-7 23h76l-7-23-6-24 15 16 19 22c2 3 4 5 7 5 5 0 8-5 5-10l-18-18c-5-9-10-16-15-20-7-6-19-9-32-10v-5c7-3 11-9 11-17 0-10-7-18-17-18z"/><path className="guide-center" d="M120 49v58M87 58l33 9 33-9"/></svg></div>
-        <span>{perspective === "front" ? "FRONT · phone at head end · about 2 m away · 30–60 cm high" : "SIDE · phone beside you · 2–3 m away · 30–60 cm high"}</span>
+        <span>{perspective === "front" ? "FRONT · at head end · about 1–2 m away · 30–60 cm high" : "SIDE · phone beside you · 2–3 m away · 30–60 cm high"}</span>
       </div>}
       {(stage === "countdown" || stage === "recording") && <div className="camera-status-pill">{stage === "countdown" ? `Ready in ${countdown}` : `Recording · ${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")} · ${liveReps} reps`}</div>}
     </div>
     <div className={`camera-position ${positionReady ? "ready" : ""}`} role="status" aria-live="polite"><span className="camera-state-dot"/>{positionReady ? "Upper body visible — hold the selected camera angle." : cameraLive ? "MYLVL cannot see your head and a full arm yet. Adjust the phone to the guide. You can still start, but reps may not be detected." : <>{perspective === "front" ? "Face the camera at the head end; keep your head, shoulders, both arms and hands visible. Aim to include the full body." : "Stand side-on to the camera; keep shoulders, hips and ankles visible."} Use good light and leave space around you.</>}</div>
     <div className="camera-note"><Shield size={16}/><span>Local recognition is a helpful estimate, not tamper-proof proof or professional form assessment. Maximum analysis time: 90 seconds. Performance metrics may be provided by the model host; video frames stay on your device.</span></div>
-    {stage === "recording" && <div className="camera-recording-guidance" role="status" aria-live="polite"><strong>Live count: {liveReps} reps</strong><span>Movement is analyzed as you go. When your set is done, tap “Finish set &amp; analyze” below. Next, enter your count, compare it, and confirm to save. Nothing is saved yet.</span></div>}
+    {stage === "recording" && <div className="camera-recording-guidance" role="status" aria-live="polite"><strong>Live count: {liveReps} reps</strong><span>{repStatus} Finish the set with “Finish set &amp; analyze”, then compare and confirm. Nothing is saved yet.</span></div>}
     <div className={`camera-controls ${stage === "recording" ? "is-recording" : ""}`}>
       {stage === "setup" && <><label>Camera<select value={facing} onChange={(e) => setFacing(e.target.value as "user"|"environment")}><option value="environment">Rear camera</option><option value="user">Front camera</option></select></label><button className="primary-button" onClick={() => void startCamera()}>{cameraLive ? "Reload camera" : "Enable camera"}</button>{cameraLive && runtimeRef.current && <button className="primary-button" onClick={() => { setError(""); setCountdown(3); setStage("countdown"); }}>Start · 3-second countdown</button>}</>}
       {stage === "countdown" && <button className="secondary-button" onClick={() => setStage("setup")}>Cancel countdown</button>}
