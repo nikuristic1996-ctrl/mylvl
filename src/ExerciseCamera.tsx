@@ -194,7 +194,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   function validate() {
     const userCount = Number(reported);
     if (!Number.isSafeInteger(userCount) || userCount <= 0 || !analysis) return;
-    const result = validateExerciseEstimate({ detectedAmount: analysis.repetitions, userEstimate: userCount, confidence: analysis.confidence, minimumConfidence: 0.75 });
+    const result = validateExerciseEstimate({ detectedAmount: analysis.repetitions, userEstimate: userCount, confidence: analysis.confidence, minimumConfidence: 0.65 });
     setComparison(result); setStage("result");
   }
 
@@ -205,7 +205,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
       const type: ActivityType = exercise === "pushups" ? "Push-ups" : "Squats";
       const preview = calculateActivityXp({ type: exercise, source: "camera", recordedSession: true,
         metrics: { repetitions: analysis.repetitions },
-        exerciseValidation: { detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.75 } });
+        exerciseValidation: { detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.65 } });
       const saved = await onSave({
         id: sessionId, type, date: new Date().toISOString(), duration: Math.max(1, Math.ceil(analysis.durationSeconds / 60)),
         reps: analysis.repetitions, xp: preview.xp, source: "camera", sourceKey: sessionId, validationStatus: "pose_validated",
@@ -218,9 +218,9 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     } finally { setBusy(false); }
   }
   const sessionId = useRef(crypto.randomUUID()).current;
-  const counts = analysis && Number(reported) > 0 ? validateExerciseEstimate({ detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.75 }) : null;
+  const counts = analysis && Number(reported) > 0 ? validateExerciseEstimate({ detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.65 }) : null;
   const expPreview = analysis && counts?.status === "accepted" ? calculateActivityXp({ type: exercise, source: "camera", recordedSession: true,
-    metrics: { repetitions: analysis.repetitions }, exerciseValidation: { detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.75 } }).xp : 0;
+    metrics: { repetitions: analysis.repetitions }, exerciseValidation: { detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.65 } }).xp : 0;
 
   return <div className="modal-scrim camera-scrim" role="presentation"><section className="activity-modal exercise-camera" role="dialog" aria-modal="true" aria-labelledby="camera-title">
     <header className="modal-head"><div><div className="eyebrow">ON-DEVICE EXERCISE RECOGNITION</div><h2 id="camera-title">Camera workout</h2></div><button className="icon-button" onClick={() => { cleanup(); onClose(); }} aria-label="Close"><X size={18}/></button></header>
