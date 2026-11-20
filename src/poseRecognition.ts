@@ -31,7 +31,7 @@ const INDEX = {
 const VISIBILITY_MIN = 0.55;
 const MIN_REP_MS = 500;
 const MAX_REP_MS = 12_000;
-const REQUIRED_CONFIDENCE = 0.65;
+const REQUIRED_CONFIDENCE = 0.60;
 
 function visibility(landmark: PoseLandmark | undefined) {
   if (!landmark || !Number.isFinite(landmark.x) || !Number.isFinite(landmark.y)) return 0;
