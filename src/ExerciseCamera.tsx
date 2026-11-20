@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, Check, RotateCcw, Shield, X } from "lucide-react";
 import { calculateActivityXp, validateExerciseEstimate } from "./gameEngine";
 import type { Activity, ActivityType } from "./domain";
-import { ExerciseRepRecognizer, type ExerciseKind, type PoseLandmark } from "./poseRecognition";
+import { ExerciseRepRecognizer, type CameraPerspective, type ExerciseKind, type PoseLandmark } from "./poseRecognition";
 import { CAMERA_RECORDING_LIMIT_SECONDS, loadPoseRuntime, stopCameraTracks, type PoseRuntime } from "./poseRuntime";
 
 const EXERCISES: { kind: ExerciseKind; label: string }[] = [
@@ -49,6 +49,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const runningRef = useRef(false);
   const stageRef = useRef<Stage>("setup");
   const [exercise, setExercise] = useState<ExerciseKind>("pushups");
+  const [perspective, setPerspective] = useState<CameraPerspective>("side");
   const [facing, setFacing] = useState<"user" | "environment">("environment");
   const [stage, setStage] = useState<Stage>("setup");
   const [runtimeStatus, setRuntimeStatus] = useState("Not loaded");
@@ -96,7 +97,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   useEffect(() => {
     if (stage !== "countdown") return;
     if (countdown <= 0) {
-      recognizerRef.current = new ExerciseRepRecognizer(exercise);
+      recognizerRef.current = new ExerciseRepRecognizer(exercise, perspective);
       liveRepsRef.current = 0; setLiveReps(0);
       startRef.current = performance.now(); lastInferenceRef.current = 0;
       runningRef.current = true; setStage("recording"); return;
@@ -196,7 +197,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
         reps: analysis.repetitions, xp: preview.xp, source: "camera", sourceKey: sessionId, validationStatus: "pose_validated",
         exerciseSession: { sessionId, reportedReps: Number(reported), detectedReps: analysis.repetitions, confidence: analysis.confidence,
           validationMethod: "local_pose_landmarks", recordingDurationSeconds: analysis.durationSeconds,
-          modelVersion: "pose_landmarker_lite_float16_v1", validationVersion: "mylvl-pose-v1", usableFrames: analysis.usableFrames,
+          modelVersion: "pose_landmarker_lite_float16_v1", validationVersion: "mylvl-pose-v1", cameraPerspective: perspective, usableFrames: analysis.usableFrames,
           usableRatio: analysis.usableRatio, deviationPercent: comparison.deviationPercent },
       });
       if (saved) onClose();
@@ -211,12 +212,20 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     <header className="modal-head"><div><div className="eyebrow">ON-DEVICE EXERCISE RECOGNITION</div><h2 id="camera-title">Camera workout</h2></div><button className="icon-button" onClick={() => { cleanup(); onClose(); }} aria-label="Close"><X size={18}/></button></header>
     <p>Choose a standard bodyweight movement. The app analyzes the live camera feed on this device; it does not record or upload a video.</p>
     <div className="camera-exercise-tabs">{EXERCISES.map((item) => <button key={item.kind} className={exercise === item.kind ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => { setExercise(item.kind); setStage("setup"); setAnalysis(null); setComparison(null); }}>{item.label}</button>)}</div>
+    <div className="camera-perspectives" role="group" aria-label="Camera angle">
+      <button className={perspective === "side" ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => setPerspective("side")}>Side view · recommended</button>
+      <button className={perspective === "diagonal-front" ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => setPerspective("diagonal-front")}>Diagonal front · beta</button>
+    </div>
     <div className="camera-preview-wrap">
       <video ref={videoRef} className={facing === "user" ? "camera-preview mirrored" : "camera-preview"} playsInline muted aria-label="Live camera preview" />
       {!cameraLive && <div className="camera-placeholder"><Camera size={26}/><span>Camera preview will appear here.</span></div>}
+      {stage === "setup" && <div className={`camera-guide-overlay ${perspective}`} aria-hidden="true">
+        <div className="camera-guide-frame"><svg viewBox="0 0 240 120" focusable="false"><rect x="12" y="8" width="216" height="100" rx="12" stroke-dasharray="6 5"/><circle cx="65" cy="54" r="8"/><path d="M74 55h44l34 5h35M118 60l-13 23H87M152 60l16 23h28"/><rect x="102" y="87" width="26" height="18" rx="3"/><path d="M108 87l4-5h7l4 5m-13 9a4 4 0 1 0 8 0 4 4 0 0 0-8 0"/></svg></div>
+        <span>{perspective === "side" ? "SIDE · phone beside you, 2–3 m away, 30–60 cm high" : "DIAGONAL FRONT · 30–45°, 2–3 m away, 30–60 cm high"}</span>
+      </div>}
       {(stage === "countdown" || stage === "recording") && <div className="camera-status-pill">{stage === "countdown" ? `Ready in ${countdown}` : `Recording · ${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")} · ${liveReps} reps`}</div>}
     </div>
-    <div className={`camera-position ${positionReady ? "ready" : ""}`} role="status" aria-live="polite"><span className="camera-state-dot"/>{positionReady ? "Body visible — hold a steady side view." : cameraLive ? "MYLVL cannot see enough of your body yet. Move the phone farther back and include your full body. You can still start, but reps may not be detected." : "Position your whole body side-on, with good light and space around you."}</div>
+    <div className={`camera-position ${positionReady ? "ready" : ""}`} role="status" aria-live="polite"><span className="camera-state-dot"/>{positionReady ? "Body visible — hold the selected camera angle." : cameraLive ? "MYLVL cannot see enough of your body yet. Move the phone farther back and include your full body. You can still start, but reps may not be detected." : <>{perspective === "side" ? "Stand side-on to the camera; keep your whole body, hands and feet in frame." : "Place the camera 30–45° diagonally in front; keep your whole body, hands and feet in frame. This angle is experimental."} Use good light and leave space around you.</>}</div>
     <div className="camera-note"><Shield size={16}/><span>Local recognition is a helpful estimate, not tamper-proof proof or professional form assessment. Maximum analysis time: 90 seconds. Performance metrics may be provided by the model host; video frames stay on your device.</span></div>
     {stage === "recording" && <div className="camera-recording-guidance" role="status" aria-live="polite"><strong>Live count: {liveReps} reps</strong><span>Movement is analyzed as you go. When your set is done, tap “Finish set &amp; analyze” below. Next, enter your count, compare it, and confirm to save. Nothing is saved yet.</span></div>}
     <div className={`camera-controls ${stage === "recording" ? "is-recording" : ""}`}>
