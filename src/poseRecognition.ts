@@ -29,7 +29,9 @@ const INDEX = {
   leftKnee: 25, rightKnee: 26, leftAnkle: 27, rightAnkle: 28,
 } as const;
 const VISIBILITY_MIN = 0.55;
-const MIN_REP_MS = 500;\nconst FRONT_PUSHUP_MIN_REP_MS = 250;\nconst FRONT_PUSHUP_MIN_BODY_TRAVEL = 0.02;
+const MIN_REP_MS = 500;
+const FRONT_PUSHUP_MIN_REP_MS = 250;
+const FRONT_PUSHUP_MIN_BODY_TRAVEL = 0.02;
 const MAX_REP_MS = 12_000;
 const REQUIRED_CONFIDENCE = 0.60;
 
@@ -271,9 +273,9 @@ export class ExerciseRepRecognizer {
         else if (angle >= startAngle - (frontPushup ? 8 : 0) && alignment >= 135) {
           const cycleDuration = now - this.cycleStartMs;
           const movementRange = this.cycleStartAngle - this.lowestAngle;
-          const upperBodyMoved = !frontPushup || movementRange >= 32 || this.cycleBodyTravel >= 0.005;
-          const requiredRange = frontPushup ? (this.cycleBodyTravel >= 0.005 ? 18 : 30) : 50;
-          const minimumDuration = frontPushup ? 350 : MIN_REP_MS;
+          const upperBodyMoved = !frontPushup || this.cycleBodyTravel >= FRONT_PUSHUP_MIN_BODY_TRAVEL;
+          const requiredRange = frontPushup ? 18 : 50;
+          const minimumDuration = frontPushup ? FRONT_PUSHUP_MIN_REP_MS : MIN_REP_MS;
           if (cycleDuration >= minimumDuration && movementRange >= requiredRange && upperBodyMoved) this.reps++;
           else this.sawPartial = true;
           this.phase = "ready";
