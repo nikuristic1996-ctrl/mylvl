@@ -13,17 +13,19 @@ const awardEdge = await readFile(new URL("../supabase/functions/award-activity/i
 const valid = (overrides={}) => ({
   sessionId:"d2719d5a-0d2a-4aca-8bb7-85e88c136e1f", reportedReps:30, detectedReps:29,
   confidence:0.92, recordingDurationSeconds:31, modelVersion:"pose_landmarker_lite_float16_v1",
-  validationVersion:"mylvl-pose-v1", usableFrames:80, usableRatio:0.94, deviationPercent:3.4482758620689653,
+  validationVersion:"mylvl-pose-v1", usableFrames:80, usableRatio:0.94, deviationPercent:3.3333333333333335,
   ...overrides,
 });
 
-test("camera submission uses the Phase 1 detected-count denominator for the 10 percent check", () => {
-  const result=parseCameraExerciseSubmission(valid({reportedReps:9, detectedReps:10, deviationPercent:10}));
+test("camera submission tolerates honest count differences while EXP uses detected reps", () => {
+  const result=parseCameraExerciseSubmission(valid({reportedReps:10, detectedReps:6, confidence:0.63, deviationPercent:40}));
   assert.equal(result.ok,true);
-  assert.equal(result.value.deviationPercent,10);
-  assert.equal(validateExerciseEstimate({userEstimate:9, detectedAmount:10, confidence:0.9}).status,"accepted");
+  assert.equal(result.value.deviationPercent,40);
+  assert.equal(validateExerciseEstimate({userEstimate:10, detectedAmount:6, confidence:0.63, minimumConfidence:0.60}).status,"accepted");
+  const xp=calculateActivityXp({type:"pushups",source:"camera",recordedSession:true,metrics:{repetitions:10},
+    exerciseValidation:{detectedAmount:6,userEstimate:10,confidence:0.63,minimumConfidence:0.60}});
+  assert.equal(xp.xp,30);
 });
-
 test("rejects zero, weak confidence, poor frames, excessive duration and mismatched deviation", () => {
   for (const value of [
     valid({reportedReps:0}), valid({detectedReps:0}), valid({confidence:0.59}),
@@ -78,6 +80,13 @@ test("Edge Function authenticates before reserving camera awards and never accep
   assert.doesNotMatch(awardEdge, /incoming\.xp/);
 });
 
+
+test("production tolerance migration changes validation only and keeps awards based on detected reps", () => {
+  assert.match(toleranceMigration, /v_confidence < 0\.60/);
+  assert.match(toleranceMigration, /greatest\(1,v_reported,v_detected\) > 0\.50/);
+  assert.match(toleranceMigration, /v_metric_amount := v_detected/);
+  assert.doesNotMatch(toleranceMigration, /\b(drop\s+table|truncate\s+|delete\s+from)\b/i);
+});
 
 test("production tolerance migration changes validation only and keeps awards based on detected reps", () => {
   assert.match(toleranceMigration, /v_confidence < 0\.60/);
