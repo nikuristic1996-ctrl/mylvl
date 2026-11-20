@@ -125,7 +125,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
         const second = Math.floor((now - startRef.current) / 1000);
         if (second !== lastShownSecondRef.current) { lastShownSecondRef.current = second; setElapsed(second); }
       }
-      if (now - lastInferenceRef.current >= 180 && videoRef.current && runtimeRef.current) {
+      if (now - lastInferenceRef.current >= 100 && videoRef.current && runtimeRef.current) {
         lastInferenceRef.current = now;
         try {
           const landmarks = runtimeRef.current.detect(videoRef.current, now);
@@ -158,7 +158,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support camera access.");
       if (!window.isSecureContext) throw new Error("Camera access requires HTTPS.");
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 12, max: 15 } }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 30 } }, audio: false });
       streamRef.current = stream;
       stream.getVideoTracks().forEach((track) => track.addEventListener("ended", () => {
         if (stageRef.current === "recording" || stageRef.current === "countdown") {
