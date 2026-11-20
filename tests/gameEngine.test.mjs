@@ -134,9 +134,11 @@ test("holds daily step EXP until running steps are reconciled and subtracts them
   assert.equal(reconcileDailySteps(-1, 0).status, "invalid");
 });
 
-test("exercise validation enforces confidence, the 10 percent check, and zero detection", () => {
+test("exercise validation permits a 50 percent honest count difference and rejects larger differences", () => {
   assert.equal(validateExerciseEstimate({ detectedAmount: 10, userEstimate: 11, confidence: 0.9 }).status, "accepted");
-  assert.equal(validateExerciseEstimate({ detectedAmount: 10, userEstimate: 12, confidence: 0.9 }).status, "review");
+  assert.equal(validateExerciseEstimate({ detectedAmount: 6, userEstimate: 10, confidence: 0.63, minimumConfidence: 0.60 }).status, "accepted");
+  assert.equal(validateExerciseEstimate({ detectedAmount: 10, userEstimate: 20, confidence: 0.9 }).status, "accepted");
+  assert.equal(validateExerciseEstimate({ detectedAmount: 10, userEstimate: 21, confidence: 0.9 }).status, "review");
   assert.equal(validateExerciseEstimate({ detectedAmount: 10, userEstimate: 10, confidence: 0.2 }).status, "inconclusive");
   assert.equal(validateExerciseEstimate({ detectedAmount: 0, userEstimate: 4, confidence: 0.9 }).status, "rejected");
 });

@@ -111,12 +111,12 @@ export function validateExerciseEstimate(
     return { status: "rejected", deviationPercent: null, detectedAmount, confidence };
   }
   const deviationPercent =
-    (Math.abs(userEstimate - detectedAmount) / Math.max(1, detectedAmount)) * 100;
+    (Math.abs(userEstimate - detectedAmount) / Math.max(1, userEstimate, detectedAmount)) * 100;
   if (confidence < (validation.minimumConfidence ?? 0.7)) {
     return { status: "inconclusive", deviationPercent, detectedAmount, confidence };
   }
   return {
-    status: deviationPercent <= 10 ? "accepted" : "review",
+    status: deviationPercent <= 50 ? "accepted" : "review",
     deviationPercent,
     detectedAmount,
     confidence,

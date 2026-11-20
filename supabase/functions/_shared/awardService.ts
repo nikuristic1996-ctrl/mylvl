@@ -69,7 +69,7 @@ export function prepareAward(
     screenshotConfirmed: row.validation_status === "user_confirmed",
     recordedSession: source === "camera",
     exerciseValidation: camera ? { detectedAmount: camera.detectedReps, userEstimate: camera.reportedReps,
-      confidence: camera.confidence, minimumConfidence: 0.75 } : undefined,
+      confidence: camera.confidence, minimumConfidence: 0.60 } : undefined,
     dailyMetricBefore: numeric(reservation.daily_metric_before) ?? 0,
     dailyStepsReconciled: false,
     metrics: {
