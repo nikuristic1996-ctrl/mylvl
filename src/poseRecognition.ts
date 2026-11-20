@@ -31,7 +31,7 @@ const INDEX = {
 const VISIBILITY_MIN = 0.55;
 const MIN_REP_MS = 500;
 const MAX_REP_MS = 12_000;
-const REQUIRED_CONFIDENCE = 0.75;
+const REQUIRED_CONFIDENCE = 0.65;
 
 function visibility(landmark: PoseLandmark | undefined) {
   if (!landmark || !Number.isFinite(landmark.x) || !Number.isFinite(landmark.y)) return 0;
@@ -228,7 +228,7 @@ export class ExerciseRepRecognizer {
     const startAngle = frontPushup
       ? Math.max(120, Math.min(165, (this.frontTopAngle ?? 155) - 8))
       : 155;
-    const bottomAngle = frontPushup ? Math.max(72, startAngle - 40) : this.kind === "pushups" ? 95 : 100;
+    const bottomAngle = frontPushup ? Math.max(72, startAngle - 30) : this.kind === "pushups" ? 95 : 100;
     if ((this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") && now - this.cycleStartMs > MAX_REP_MS) {
       this.phase = "find-start";
       this.sawPartial = true;
@@ -239,7 +239,7 @@ export class ExerciseRepRecognizer {
         break;
       case "ready":
         if (bodyY !== undefined) this.cycleStartBodyY = bodyY;
-        if (angle <= startAngle - (frontPushup ? 14 : 18)) {
+        if (angle <= startAngle - (frontPushup ? 9 : 18)) {
           this.phase = "lowering";
           this.cycleBodyTravel = 0;
           this.cycleStartBodyY = bodyY ?? this.cycleStartBodyY;
@@ -259,18 +259,19 @@ export class ExerciseRepRecognizer {
       case "bottom":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
-        if (angle >= bottomAngle + (frontPushup ? 15 : 22)) this.phase = "rising";
+        if (angle >= bottomAngle + (frontPushup ? 10 : 22)) this.phase = "rising";
         break;
       case "rising":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
         if (angle <= bottomAngle) this.phase = "bottom";
-        else if (angle >= startAngle - (frontPushup ? 5 : 0) && alignment >= 135) {
+        else if (angle >= startAngle - (frontPushup ? 8 : 0) && alignment >= 135) {
           const cycleDuration = now - this.cycleStartMs;
           const movementRange = this.cycleStartAngle - this.lowestAngle;
-          const upperBodyMoved = !frontPushup || movementRange >= 45 || this.cycleBodyTravel >= 0.008;
-          const requiredRange = frontPushup ? 35 : 50;
-          if (cycleDuration >= MIN_REP_MS && movementRange >= requiredRange && upperBodyMoved) this.reps++;
+          const upperBodyMoved = !frontPushup || movementRange >= 32 || this.cycleBodyTravel >= 0.005;
+          const requiredRange = frontPushup ? (this.cycleBodyTravel >= 0.005 ? 18 : 30) : 50;
+          const minimumDuration = frontPushup ? 350 : MIN_REP_MS;
+          if (cycleDuration >= minimumDuration && movementRange >= requiredRange && upperBodyMoved) this.reps++;
           else this.sawPartial = true;
           this.phase = "ready";
         }
