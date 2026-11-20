@@ -29,7 +29,7 @@ const INDEX = {
   leftKnee: 25, rightKnee: 26, leftAnkle: 27, rightAnkle: 28,
 } as const;
 const VISIBILITY_MIN = 0.55;
-const MIN_REP_MS = 500;
+const MIN_REP_MS = 500;\nconst FRONT_PUSHUP_MIN_REP_MS = 250;\nconst FRONT_PUSHUP_MIN_BODY_TRAVEL = 0.02;
 const MAX_REP_MS = 12_000;
 const REQUIRED_CONFIDENCE = 0.60;
 
@@ -180,7 +180,10 @@ export class ExerciseRepRecognizer {
     }
     this.angleWindow.push(angle);
     if (this.angleWindow.length > 3) this.angleWindow.shift();
-    const filtered = median(this.angleWindow);
+    const smoothed = median(this.angleWindow);
+    // Fast lowering or rising can cross an entire phase between inference frames.
+    // Preserve a strong real angle change instead of letting the 3-frame median erase it.
+    const filtered = Math.abs(angle - smoothed) >= 14 ? angle : smoothed;
     this.usableFrames++;
     this.confidenceSum += scores.reduce((sum, score) => sum + score, 0) / scores.length;
     this.updatePhase(filtered, 180, frame.timestampMs, bodyY);
