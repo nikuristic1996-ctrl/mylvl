@@ -30,6 +30,8 @@ const INDEX = {
 } as const;
 const VISIBILITY_MIN = 0.55;
 const MIN_REP_MS = 500;
+const FRONT_PUSHUP_MIN_REP_MS = 250;
+const FRONT_PUSHUP_MIN_BODY_TRAVEL = 0.02;
 const MAX_REP_MS = 12_000;
 const REQUIRED_CONFIDENCE = 0.60;
 
@@ -180,7 +182,10 @@ export class ExerciseRepRecognizer {
     }
     this.angleWindow.push(angle);
     if (this.angleWindow.length > 3) this.angleWindow.shift();
-    const filtered = median(this.angleWindow);
+    const smoothed = median(this.angleWindow);
+    // Fast lowering or rising can cross an entire phase between inference frames.
+    // Preserve a strong real angle change instead of letting the 3-frame median erase it.
+    const filtered = Math.abs(angle - smoothed) >= 14 ? angle : smoothed;
     this.usableFrames++;
     this.confidenceSum += scores.reduce((sum, score) => sum + score, 0) / scores.length;
     this.updatePhase(filtered, 180, frame.timestampMs, bodyY);
@@ -268,9 +273,9 @@ export class ExerciseRepRecognizer {
         else if (angle >= startAngle - (frontPushup ? 8 : 0) && alignment >= 135) {
           const cycleDuration = now - this.cycleStartMs;
           const movementRange = this.cycleStartAngle - this.lowestAngle;
-          const upperBodyMoved = !frontPushup || movementRange >= 32 || this.cycleBodyTravel >= 0.005;
-          const requiredRange = frontPushup ? (this.cycleBodyTravel >= 0.005 ? 18 : 30) : 50;
-          const minimumDuration = frontPushup ? 350 : MIN_REP_MS;
+          const upperBodyMoved = !frontPushup || this.cycleBodyTravel >= FRONT_PUSHUP_MIN_BODY_TRAVEL;
+          const requiredRange = frontPushup ? 18 : 50;
+          const minimumDuration = frontPushup ? FRONT_PUSHUP_MIN_REP_MS : MIN_REP_MS;
           if (cycleDuration >= minimumDuration && movementRange >= requiredRange && upperBodyMoved) this.reps++;
           else this.sawPartial = true;
           this.phase = "ready";
