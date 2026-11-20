@@ -22,8 +22,17 @@ export function cameraErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The camera could not be started. Please retry.";
 }
 
-function hasVisibleBody(landmarks: PoseLandmark[] | null, kind: ExerciseKind) {
+function hasVisibleBody(landmarks: PoseLandmark[] | null, kind: ExerciseKind, perspective: CameraPerspective) {
   if (!landmarks || landmarks.length < 29) return false;
+  if (kind === "pushups" && perspective !== "side") {
+    const head = landmarks[0];
+    const headVisible = (head?.visibility ?? 0) >= MIN_VISIBILITY && head.x >= 0.01 && head.x <= 0.99 && head.y >= 0.01 && head.y <= 0.99;
+    const arms = [[11,13,15],[12,14,16]];
+    return headVisible && arms.some((indices) => indices.every((i) => {
+      const item = landmarks[i];
+      return (item?.visibility ?? 0) >= MIN_VISIBILITY && item.x >= 0.01 && item.x <= 0.99 && item.y >= 0.01 && item.y <= 0.99;
+    }));
+  }
   const sides = kind === "pushups" ? [[11,13,15,23,25,27],[12,14,16,24,26,28]] : [[11,23,25,27],[12,24,26,28]];
   return sides.some((indices) => indices.every((i) => {
     const item=landmarks[i];
@@ -49,7 +58,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const runningRef = useRef(false);
   const stageRef = useRef<Stage>("setup");
   const [exercise, setExercise] = useState<ExerciseKind>("pushups");
-  const [perspective, setPerspective] = useState<CameraPerspective>("side");
+  const [perspective, setPerspective] = useState<CameraPerspective>("front");
   const [facing, setFacing] = useState<"user" | "environment">("environment");
   const [stage, setStage] = useState<Stage>("setup");
   const [runtimeStatus, setRuntimeStatus] = useState("Not loaded");
@@ -119,7 +128,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
         lastInferenceRef.current = now;
         try {
           const landmarks = runtimeRef.current.detect(videoRef.current, now);
-          const visible = hasVisibleBody(landmarks, exercise);
+          const visible = hasVisibleBody(landmarks, exercise, perspective);
           if (visible !== lastPositionRef.current) { lastPositionRef.current = visible; setPositionReady(visible); }
           if (landmarks && stage === "recording") {
             const result = recognizerRef.current?.process({ landmarks, width: videoRef.current.videoWidth, height: videoRef.current.videoHeight, timestampMs: now });
@@ -213,19 +222,19 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     <p>Choose a standard bodyweight movement. The app analyzes the live camera feed on this device; it does not record or upload a video.</p>
     <div className="camera-exercise-tabs">{EXERCISES.map((item) => <button key={item.kind} className={exercise === item.kind ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => { setExercise(item.kind); setStage("setup"); setAnalysis(null); setComparison(null); }}>{item.label}</button>)}</div>
     <div className="camera-perspectives" role="group" aria-label="Camera angle">
-      <button className={perspective === "side" ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => setPerspective("side")}>Side view · recommended</button>
-      <button className={perspective === "diagonal-front" ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => setPerspective("diagonal-front")}>Diagonal front · beta</button>
+      <button className={perspective === "front" ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => setPerspective("front")}>Front view · recommended</button>
+      <button className={perspective === "side" ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => setPerspective("side")}>Side view · alternative</button>
     </div>
     <div className="camera-preview-wrap">
       <video ref={videoRef} className={facing === "user" ? "camera-preview mirrored" : "camera-preview"} playsInline muted aria-label="Live camera preview" />
       {!cameraLive && <div className="camera-placeholder"><Camera size={26}/><span>Camera preview will appear here.</span></div>}
       {stage === "setup" && <div className={`camera-guide-overlay ${perspective}`} aria-hidden="true">
-        <div className="camera-guide-frame"><svg viewBox="0 0 240 120" focusable="false"><rect x="12" y="8" width="216" height="100" rx="12" stroke-dasharray="6 5"/><circle cx="65" cy="54" r="8"/><path d="M74 55h44l34 5h35M118 60l-13 23H87M152 60l16 23h28"/><rect x="102" y="87" width="26" height="18" rx="3"/><path d="M108 87l4-5h7l4 5m-13 9a4 4 0 1 0 8 0 4 4 0 0 0-8 0"/></svg></div>
-        <span>{perspective === "side" ? "SIDE · phone beside you, 2–3 m away, 30–60 cm high" : "DIAGONAL FRONT · 30–45°, 2–3 m away, 30–60 cm high"}</span>
+        <div className="camera-guide-frame"><svg viewBox="0 0 240 120" focusable="false"><path className="guide-silhouette" d="M120 8c-10 0-17 8-17 18 0 8 4 14 11 17v5c-13 1-25 4-32 10-5 4-10 11-15 20L49 96c-3 5 0 10 5 10 3 0 5-2 7-5l19-22 15-16-6 24-7 23h76l-7-23-6-24 15 16 19 22c2 3 4 5 7 5 5 0 8-5 5-10l-18-18c-5-9-10-16-15-20-7-6-19-9-32-10v-5c7-3 11-9 11-17 0-10-7-18-17-18z"/><path className="guide-center" d="M120 49v58M87 58l33 9 33-9"/></svg></div>
+        <span>{perspective === "side" ? "FRONT · phone at head end · about 2 m away · 30–60 cm high" : "SIDE · phone beside you · 2–3 m away · 30–60 cm high"}</span>
       </div>}
       {(stage === "countdown" || stage === "recording") && <div className="camera-status-pill">{stage === "countdown" ? `Ready in ${countdown}` : `Recording · ${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")} · ${liveReps} reps`}</div>}
     </div>
-    <div className={`camera-position ${positionReady ? "ready" : ""}`} role="status" aria-live="polite"><span className="camera-state-dot"/>{positionReady ? "Body visible — hold the selected camera angle." : cameraLive ? "MYLVL cannot see enough of your body yet. Move the phone farther back and include your full body. You can still start, but reps may not be detected." : <>{perspective === "side" ? "Stand side-on to the camera; keep your whole body, hands and feet in frame." : "Place the camera 30–45° diagonally in front; keep your whole body, hands and feet in frame. This angle is experimental."} Use good light and leave space around you.</>}</div>
+    <div className={`camera-position ${positionReady ? "ready" : ""}`} role="status" aria-live="polite"><span className="camera-state-dot"/>{positionReady ? "Upper body visible — hold the selected camera angle." : cameraLive ? "MYLVL cannot see your head and a full arm yet. Adjust the phone to the guide. You can still start, but reps may not be detected." : <>{perspective === "side" ? "Face the camera at the head end; keep your head, shoulders, both arms and hands visible. Aim to include the full body." : "Stand side-on to the camera; keep shoulders, hips and ankles visible."} Use good light and leave space around you.</>}</div>
     <div className="camera-note"><Shield size={16}/><span>Local recognition is a helpful estimate, not tamper-proof proof or professional form assessment. Maximum analysis time: 90 seconds. Performance metrics may be provided by the model host; video frames stay on your device.</span></div>
     {stage === "recording" && <div className="camera-recording-guidance" role="status" aria-live="polite"><strong>Live count: {liveReps} reps</strong><span>Movement is analyzed as you go. When your set is done, tap “Finish set &amp; analyze” below. Next, enter your count, compare it, and confirm to save. Nothing is saved yet.</span></div>}
     <div className={`camera-controls ${stage === "recording" ? "is-recording" : ""}`}>
