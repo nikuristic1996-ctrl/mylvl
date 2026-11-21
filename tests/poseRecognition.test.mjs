@@ -104,3 +104,30 @@ test("front push-ups: arm angle changes without head and shoulder travel do not 
   }
   assert.equal(recognizer.repetitions, 0);
 });
+
+test("front push-ups: head and shoulder travel can drive reps when the frontal arm angle barely changes", () => {
+  const recognizer = new ExerciseRepRecognizer("pushups", "front");
+  const shifts = [0, 0, 0.005, 0.02, 0.04, 0.055, 0.04, 0.02, 0.005, 0];
+  shifts.forEach((shift, index) => recognizer.process(frontPushupFrame(130, 1000 + index * 120, shift)));
+  assert.equal(recognizer.repetitions, 1);
+});
+
+test("front push-ups: a fast full upper-body cycle is counted", () => {
+  const recognizer = new ExerciseRepRecognizer("pushups", "front");
+  const shifts = [0, 0, 0.02, 0.055, 0.02, 0];
+  shifts.forEach((shift, index) => recognizer.process(frontPushupFrame(130, 1000 + index * 100, shift)));
+  assert.equal(recognizer.repetitions, 1);
+});
+
+test("front push-ups: small head movement and incomplete returns are not counted", () => {
+  const recognizer = new ExerciseRepRecognizer("pushups", "front");
+  const shifts = [0, 0, 0.004, 0.008, 0.012, 0.008, 0.004, 0];
+  shifts.forEach((shift, index) => recognizer.process(frontPushupFrame(130, 1000 + index * 150, shift)));
+  assert.equal(recognizer.repetitions, 0);
+
+  const partial = new ExerciseRepRecognizer("pushups", "front");
+  [0, 0, 0.02, 0.055, 0.04, 0.02].forEach((shift, index) =>
+    partial.process(frontPushupFrame(130, 3000 + index * 150, shift)));
+  assert.equal(partial.repetitions, 0);
+});
+
