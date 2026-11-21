@@ -30,8 +30,10 @@ const INDEX = {
 } as const;
 const VISIBILITY_MIN = 0.55;
 const MIN_REP_MS = 500;
-const FRONT_PUSHUP_MIN_REP_MS = 250;
-const FRONT_PUSHUP_MIN_BODY_TRAVEL = 0.02;
+const FRONT_PUSHUP_MIN_REP_MS = 180;
+const FRONT_PUSHUP_START_BODY_DROP = 0.035;
+const FRONT_PUSHUP_BOTTOM_BODY_DROP = 0.09;
+const FRONT_PUSHUP_CLEAR_BODY_DROP = 0.14;
 const MAX_REP_MS = 12_000;
 const REQUIRED_CONFIDENCE = 0.60;
 
@@ -82,6 +84,9 @@ export class ExerciseRepRecognizer {
   private cycleStartBodyY: number | null = null;
   private cycleBodyTravel = 0;
   private frontTopAngle: number | null = null;
+  private frontTopBodyY: number | null = null;
+  private frontPeakBodyDrop = 0;
+  private frontHighestAngle = 0;
   private lowestAngle = 180;
   private firstTimestamp = 0;
   private sawPartial = false;
@@ -225,58 +230,127 @@ export class ExerciseRepRecognizer {
     return Math.max(0, Math.min(1, meanVisibility * (this.usableFrames / this.totalFrames)));
   }
 
+  private updateFrontPushupPhase(angle: number, now: number, bodyY: number) {
+    if (this.phase === "find-start") {
+      this.frontTopBodyY = this.frontTopBodyY === null ? bodyY : Math.min(this.frontTopBodyY, bodyY);
+      this.frontTopAngle = Math.max(this.frontTopAngle ?? 0, angle);
+      // A frontal camera cannot reliably see elbow flexion in depth. Use an
+      // extended-looking arm only to establish the initial top position.
+      if (angle >= 65) {
+        this.phase = "ready";
+        this.cycleStartBodyY = bodyY;
+      }
+      return;
+    }
+
+    if ((this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") && now - this.cycleStartMs > MAX_REP_MS) {
+      this.phase = "find-start";
+      this.frontTopBodyY = bodyY;
+      this.frontTopAngle = angle;
+      this.sawPartial = true;
+      return;
+    }
+
+    const topY = this.frontTopBodyY ?? bodyY;
+    const bodyDrop = Math.max(0, bodyY - topY);
+
+    if (this.phase === "ready") {
+      // Refresh the baseline only when the body moves higher, so a slow
+      // descent cannot drag the reference down with it.
+      if (bodyY < topY) {
+        this.frontTopBodyY = bodyY;
+        this.frontTopAngle = Math.max(this.frontTopAngle ?? angle, angle);
+      }
+      const angleDrop = (this.frontTopAngle ?? angle) - angle;
+      if (bodyDrop >= FRONT_PUSHUP_START_BODY_DROP || angleDrop >= 12) {
+        this.phase = "lowering";
+        this.cycleStartMs = now;
+        this.cycleStartBodyY = this.frontTopBodyY ?? bodyY;
+        this.frontPeakBodyDrop = bodyDrop;
+        this.cycleStartAngle = angle;
+        this.lowestAngle = angle;
+        this.frontHighestAngle = angle;
+      }
+      return;
+    }
+
+    this.frontPeakBodyDrop = Math.max(this.frontPeakBodyDrop, bodyDrop);
+    this.lowestAngle = Math.min(this.lowestAngle, angle);
+    this.frontHighestAngle = Math.max(this.frontHighestAngle, angle);
+    const returningFromPeak = bodyDrop <= this.frontPeakBodyDrop - FRONT_PUSHUP_START_BODY_DROP;
+
+    if (this.phase === "lowering") {
+      if (this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP) this.phase = "bottom";
+      else if (returningFromPeak) this.phase = "rising";
+    } else if (this.phase === "bottom") {
+      if (returningFromPeak) this.phase = "rising";
+    } else if (this.phase === "rising") {
+      // If the user reverses direction before returning to the top, resume
+      // tracking the descent instead of accepting a partial movement.
+      if (bodyDrop >= this.frontPeakBodyDrop - FRONT_PUSHUP_START_BODY_DROP / 2) {
+        this.phase = "bottom";
+      } else if (bodyDrop <= FRONT_PUSHUP_START_BODY_DROP) {
+        const cycleDuration = now - this.cycleStartMs;
+        const armRange = this.frontHighestAngle - this.lowestAngle;
+        const visibleMovement = armRange >= 6 || this.frontPeakBodyDrop >= FRONT_PUSHUP_CLEAR_BODY_DROP;
+        if (cycleDuration >= FRONT_PUSHUP_MIN_REP_MS &&
+            this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP &&
+            visibleMovement) {
+          this.reps++;
+        } else {
+          this.sawPartial = true;
+        }
+        this.phase = "ready";
+        this.frontTopBodyY = bodyY;
+        this.frontTopAngle = angle;
+        this.frontPeakBodyDrop = 0;
+      }
+    }
+  }
+
   private updatePhase(angle: number, alignment: number, now: number, bodyY?: number) {
     const frontPushup = this.kind === "pushups" && this.perspective !== "side";
-    if (frontPushup && this.phase === "find-start" && angle >= 115) {
-      this.frontTopAngle = Math.max(this.frontTopAngle ?? 0, angle);
+    if (frontPushup && bodyY !== undefined) {
+      this.updateFrontPushupPhase(angle, now, bodyY);
+      return;
     }
-    const startAngle = frontPushup
-      ? Math.max(120, Math.min(165, (this.frontTopAngle ?? 155) - 8))
-      : 155;
-    const bottomAngle = frontPushup ? Math.max(72, startAngle - 30) : this.kind === "pushups" ? 95 : 100;
     if ((this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") && now - this.cycleStartMs > MAX_REP_MS) {
       this.phase = "find-start";
       this.sawPartial = true;
     }
     switch (this.phase) {
       case "find-start":
-        if (angle >= startAngle && alignment >= 135) { this.phase = "ready"; this.cycleStartBodyY = bodyY ?? null; }
+        if (angle >= 155 && alignment >= 135) { this.phase = "ready"; this.cycleStartBodyY = bodyY ?? null; }
         break;
       case "ready":
-        if (bodyY !== undefined) this.cycleStartBodyY = bodyY;
-        if (angle <= startAngle - (frontPushup ? 9 : 18)) {
+        if (angle <= 137) {
           this.phase = "lowering";
           this.cycleBodyTravel = 0;
           this.cycleStartBodyY = bodyY ?? this.cycleStartBodyY;
           this.cycleStartMs = now;
-          // Median smoothing can lag by two frames and cross this threshold
-          // near the bottom. Anchor amplitude to the ready threshold.
-          this.cycleStartAngle = startAngle;
+          this.cycleStartAngle = 155;
           this.lowestAngle = angle;
         }
         break;
       case "lowering":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
-        if (angle <= bottomAngle) this.phase = "bottom";
-        else if (angle >= startAngle) this.phase = "ready";
+        if (angle <= (this.kind === "pushups" ? 95 : 100)) this.phase = "bottom";
+        else if (angle >= 155) this.phase = "ready";
         break;
       case "bottom":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
-        if (angle >= bottomAngle + (frontPushup ? 10 : 22)) this.phase = "rising";
+        if (angle >= (this.kind === "pushups" ? 117 : 122)) this.phase = "rising";
         break;
       case "rising":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
-        if (angle <= bottomAngle) this.phase = "bottom";
-        else if (angle >= startAngle - (frontPushup ? 8 : 0) && alignment >= 135) {
+        if (angle <= (this.kind === "pushups" ? 95 : 100)) this.phase = "bottom";
+        else if (angle >= 155 && alignment >= 135) {
           const cycleDuration = now - this.cycleStartMs;
           const movementRange = this.cycleStartAngle - this.lowestAngle;
-          const upperBodyMoved = !frontPushup || this.cycleBodyTravel >= FRONT_PUSHUP_MIN_BODY_TRAVEL;
-          const requiredRange = frontPushup ? 18 : 50;
-          const minimumDuration = frontPushup ? FRONT_PUSHUP_MIN_REP_MS : MIN_REP_MS;
-          if (cycleDuration >= minimumDuration && movementRange >= requiredRange && upperBodyMoved) this.reps++;
+          if (cycleDuration >= MIN_REP_MS && movementRange >= 50) this.reps++;
           else this.sawPartial = true;
           this.phase = "ready";
         }
