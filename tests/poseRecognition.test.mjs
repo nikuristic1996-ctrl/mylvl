@@ -131,3 +131,17 @@ test("front push-ups: small head movement and incomplete returns are not counted
   assert.equal(partial.repetitions, 0);
 });
 
+test("front push-ups: counts fast reps when the rising frames are skipped", () => {
+  const recognizer = new ExerciseRepRecognizer("pushups", "front");
+  const shifts = [0, 0.055, 0, 0.055, 0];
+  shifts.forEach((shift, index) => recognizer.process(frontPushupFrame(130, 5000 + index * 100, shift)));
+  assert.equal(recognizer.repetitions, 2);
+});
+
+test("front push-ups: counts a brisk cycle from only top, bottom and top samples", () => {
+  const recognizer = new ExerciseRepRecognizer("pushups", "front");
+  [0, 0.055, 0].forEach((shift, index) =>
+    recognizer.process(frontPushupFrame(130, 7000 + index * 100, shift)));
+  assert.equal(recognizer.repetitions, 1);
+});
+
