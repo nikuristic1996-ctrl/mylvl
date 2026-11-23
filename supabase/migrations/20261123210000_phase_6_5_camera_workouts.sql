@@ -45,7 +45,7 @@ begin
     or v_type not in ('pushups','squats','situps','plank')
     or coalesce(v_validation ->> 'exerciseType',v_type) <> v_type
     or coalesce(v_validation ->> 'metricType',case when v_type='plank' then 'hold_seconds' else 'repetitions' end)
-      <> case when v_type='plank' then 'hold_seconds' else 'repetitions' end then
+      <> (case when v_type='plank' then 'hold_seconds' else 'repetitions' end) then
     raise exception 'Camera awards support only matching push-ups, squats, sit-ups or plank sessions';
   end if;
 
