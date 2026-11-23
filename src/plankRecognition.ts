@@ -1,4 +1,4 @@
-import { jointAngle, type PoseFrame, type PoseLandmark } from "./poseRecognition";
+import { jointAngle, type PoseFrame, type PoseLandmark } from "./poseRecognition.ts";
 
 const MIN_VISIBILITY = 0.55;
 const MAX_SAMPLE_GAP_MS = 300;
