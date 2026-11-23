@@ -84,7 +84,9 @@ export class ExerciseRepRecognizer {
   private cycleStartBodyY: number | null = null;
   private cycleBodyTravel = 0;
   private frontTopAngle: number | null = null;
-  private frontTopBodyY: number | null = null;
+  private frontTopNoseY: number | null = null;
+  private frontTopShoulderY: number | null = null;
+  private frontActiveAnchor: "nose" | "shoulder" | null = null;
   private frontPeakBodyDrop = 0;
   private frontHighestAngle = 0;
   private lowestAngle = 180;
@@ -176,8 +178,11 @@ export class ExerciseRepRecognizer {
     const shoulderWidth = visibility(leftShoulder) >= VISIBILITY_MIN && visibility(rightShoulder) >= VISIBILITY_MIN
       ? Math.hypot((leftShoulder.x - rightShoulder.x) * frame.width, (leftShoulder.y - rightShoulder.y) * frame.height)
       : frame.width * 0.2;
-    const bodyY = ((nose.y * frame.height + shoulderCenterY) / 2) / Math.max(1, shoulderWidth);
-    if (!Number.isFinite(bodyY)) return this.invalidFrame("Keep your face and shoulders centered in the frame.");
+    const safeShoulderWidth = Math.max(1, shoulderWidth);
+    const noseY = nose.y * frame.height / safeShoulderWidth;
+    const shoulderY = shoulderCenterY / safeShoulderWidth;
+    const bodyY = (noseY + shoulderY) / 2;
+    if (![noseY, shoulderY, bodyY].every(Number.isFinite)) return this.invalidFrame("Keep your face and shoulders centered in the frame.");
     const confidenceLandmarks = [...new Set([noseIndex, ...selected.flatMap((arm) => arm.indices),
       ...[INDEX.leftShoulder, INDEX.rightShoulder].filter((index) => visibility(frame.landmarks[index]) >= VISIBILITY_MIN)])];
     const scores = confidenceLandmarks.map((index) => visibility(frame.landmarks[index]));
@@ -193,7 +198,7 @@ export class ExerciseRepRecognizer {
     const filtered = Math.abs(angle - smoothed) >= 14 ? angle : smoothed;
     this.usableFrames++;
     this.confidenceSum += scores.reduce((sum, score) => sum + score, 0) / scores.length;
-    this.updatePhase(filtered, 180, frame.timestampMs, bodyY);
+    this.updatePhase(filtered, 180, frame.timestampMs, bodyY, noseY, shoulderY);
     return { usable: true, phase: this.phase, repetitions: this.reps, confidence: this.currentConfidence() };
   }
 
@@ -230,12 +235,12 @@ export class ExerciseRepRecognizer {
     return Math.max(0, Math.min(1, meanVisibility * (this.usableFrames / this.totalFrames)));
   }
 
-  private updateFrontPushupPhase(angle: number, now: number, bodyY: number) {
+  private updateFrontPushupPhase(angle: number, now: number, bodyY: number, noseY: number, shoulderY: number) {
     if (this.phase === "find-start") {
-      this.frontTopBodyY = this.frontTopBodyY === null ? bodyY : Math.min(this.frontTopBodyY, bodyY);
+      this.frontTopNoseY = this.frontTopNoseY === null ? noseY : Math.min(this.frontTopNoseY, noseY);
+      this.frontTopShoulderY = this.frontTopShoulderY === null ? shoulderY : Math.min(this.frontTopShoulderY, shoulderY);
       this.frontTopAngle = Math.max(this.frontTopAngle ?? 0, angle);
-      // A frontal camera cannot reliably see elbow flexion in depth. Use an
-      // extended-looking arm only to establish the initial top position.
+      // Establish separate top references for the head and shoulder line.
       if (angle >= 65) {
         this.phase = "ready";
         this.cycleStartBodyY = bodyY;
@@ -245,28 +250,33 @@ export class ExerciseRepRecognizer {
 
     if ((this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") && now - this.cycleStartMs > MAX_REP_MS) {
       this.phase = "find-start";
-      this.frontTopBodyY = bodyY;
+      this.frontTopNoseY = noseY;
+      this.frontTopShoulderY = shoulderY;
+      this.frontActiveAnchor = null;
       this.frontTopAngle = angle;
       this.sawPartial = true;
       return;
     }
 
-    const topY = this.frontTopBodyY ?? bodyY;
-    const bodyDrop = Math.max(0, bodyY - topY);
+    const noseTopY = this.frontTopNoseY ?? noseY;
+    const shoulderTopY = this.frontTopShoulderY ?? shoulderY;
+    const noseDrop = Math.max(0, noseY - noseTopY);
+    const shoulderDrop = Math.max(0, shoulderY - shoulderTopY);
+    const observedDrop = Math.max(noseDrop, shoulderDrop);
 
     if (this.phase === "ready") {
-      // Refresh the baseline only when the body moves higher, so a slow
-      // descent cannot drag the reference down with it.
-      if (bodyY < topY) {
-        this.frontTopBodyY = bodyY;
-        this.frontTopAngle = Math.max(this.frontTopAngle ?? angle, angle);
-      }
+      // Update each reference independently only when that landmark moves higher.
+      if (noseY < noseTopY) this.frontTopNoseY = noseY;
+      if (shoulderY < shoulderTopY) this.frontTopShoulderY = shoulderY;
       const angleDrop = (this.frontTopAngle ?? angle) - angle;
-      if (bodyDrop >= FRONT_PUSHUP_START_BODY_DROP || angleDrop >= 12) {
+      if (observedDrop >= FRONT_PUSHUP_START_BODY_DROP || angleDrop >= 12) {
+        // Follow whichever landmark gives the clearest signal for this set.
+        this.frontActiveAnchor = noseDrop >= shoulderDrop ? "nose" : "shoulder";
+        const activeDrop = this.frontActiveAnchor === "nose" ? noseDrop : shoulderDrop;
         this.phase = "lowering";
         this.cycleStartMs = now;
-        this.cycleStartBodyY = this.frontTopBodyY ?? bodyY;
-        this.frontPeakBodyDrop = bodyDrop;
+        this.cycleStartBodyY = bodyY;
+        this.frontPeakBodyDrop = activeDrop;
         this.cycleStartAngle = angle;
         this.lowestAngle = angle;
         this.frontHighestAngle = angle;
@@ -274,6 +284,7 @@ export class ExerciseRepRecognizer {
       return;
     }
 
+    const bodyDrop = this.frontActiveAnchor === "nose" ? noseDrop : shoulderDrop;
     this.frontPeakBodyDrop = Math.max(this.frontPeakBodyDrop, bodyDrop);
     this.lowestAngle = Math.min(this.lowestAngle, angle);
     this.frontHighestAngle = Math.max(this.frontHighestAngle, angle);
@@ -285,7 +296,7 @@ export class ExerciseRepRecognizer {
       // frame is already back at the top.
       if (bodyDrop <= FRONT_PUSHUP_START_BODY_DROP &&
           this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP) {
-        this.completeFrontPushup(now, bodyY, angle);
+        this.completeFrontPushup(now, noseY, shoulderY, angle);
       } else if (this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP) {
         this.phase = "bottom";
       } else if (returningFromPeak) {
@@ -294,7 +305,7 @@ export class ExerciseRepRecognizer {
     } else if (this.phase === "bottom") {
       if (bodyDrop <= FRONT_PUSHUP_START_BODY_DROP &&
           this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP) {
-        this.completeFrontPushup(now, bodyY, angle);
+        this.completeFrontPushup(now, noseY, shoulderY, angle);
       } else if (returningFromPeak) {
         this.phase = "rising";
       }
@@ -304,12 +315,12 @@ export class ExerciseRepRecognizer {
       if (bodyDrop >= this.frontPeakBodyDrop - FRONT_PUSHUP_START_BODY_DROP / 2) {
         this.phase = "bottom";
       } else if (bodyDrop <= FRONT_PUSHUP_START_BODY_DROP) {
-        this.completeFrontPushup(now, bodyY, angle);
+        this.completeFrontPushup(now, noseY, shoulderY, angle);
       }
     }
   }
 
-  private completeFrontPushup(now: number, bodyY: number, angle: number) {
+  private completeFrontPushup(now: number, noseY: number, shoulderY: number, angle: number) {
     const cycleDuration = now - this.cycleStartMs;
     const armRange = this.frontHighestAngle - this.lowestAngle;
     const visibleMovement = armRange >= 6 || this.frontPeakBodyDrop >= FRONT_PUSHUP_CLEAR_BODY_DROP;
@@ -321,15 +332,17 @@ export class ExerciseRepRecognizer {
       this.sawPartial = true;
     }
     this.phase = "ready";
-    this.frontTopBodyY = bodyY;
+    this.frontTopNoseY = noseY;
+    this.frontTopShoulderY = shoulderY;
+    this.frontActiveAnchor = null;
     this.frontTopAngle = angle;
     this.frontPeakBodyDrop = 0;
   }
 
-  private updatePhase(angle: number, alignment: number, now: number, bodyY?: number) {
+  private updatePhase(angle: number, alignment: number, now: number, bodyY?: number, noseY?: number, shoulderY?: number) {
     const frontPushup = this.kind === "pushups" && this.perspective !== "side";
-    if (frontPushup && bodyY !== undefined) {
-      this.updateFrontPushupPhase(angle, now, bodyY);
+    if (frontPushup && bodyY !== undefined && noseY !== undefined && shoulderY !== undefined) {
+      this.updateFrontPushupPhase(angle, now, bodyY, noseY, shoulderY);
       return;
     }
     if ((this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") && now - this.cycleStartMs > MAX_REP_MS) {
