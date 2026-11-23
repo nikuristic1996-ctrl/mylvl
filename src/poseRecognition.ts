@@ -1,4 +1,5 @@
-export type ExerciseKind = "pushups" | "squats";
+export type ExerciseKind = "pushups" | "squats" | "situps" | "plank";
+export type RepExerciseKind = Exclude<ExerciseKind, "plank">;
 export type CameraPerspective = "side" | "front" | "diagonal-front";
 export type PoseLandmark = { x: number; y: number; visibility?: number; presence?: number };
 export type PoseFrame = { landmarks: PoseLandmark[]; width: number; height: number; timestampMs: number };
@@ -55,7 +56,7 @@ export function jointAngle(a: {x:number;y:number}, b: {x:number;y:number}, c: {x
 }
 
 type Side = "left" | "right";
-function bestSide(landmarks: PoseLandmark[], kind: ExerciseKind): Side {
+function bestSide(landmarks: PoseLandmark[], kind: RepExerciseKind): Side {
   const indices = kind === "pushups"
     ? [[INDEX.leftShoulder, INDEX.leftElbow, INDEX.leftWrist, INDEX.leftHip, INDEX.leftKnee, INDEX.leftAnkle], [INDEX.rightShoulder, INDEX.rightElbow, INDEX.rightWrist, INDEX.rightHip, INDEX.rightKnee, INDEX.rightAnkle]]
     : [[INDEX.leftShoulder, INDEX.leftHip, INDEX.leftKnee, INDEX.leftAnkle], [INDEX.rightShoulder, INDEX.rightHip, INDEX.rightKnee, INDEX.rightAnkle]];
@@ -70,7 +71,7 @@ function median(values: number[]) {
 
 export class ExerciseRepRecognizer {
   readonly modelVersion = POSE_VERSION;
-  private readonly kind: ExerciseKind;
+  private readonly kind: RepExerciseKind;
   private readonly perspective: CameraPerspective;
   private phase: RepPhase = "find-start";
   private reps = 0;
@@ -93,7 +94,7 @@ export class ExerciseRepRecognizer {
   private firstTimestamp = 0;
   private sawPartial = false;
 
-  constructor(kind: ExerciseKind, perspective: CameraPerspective = "side") { this.kind = kind; this.perspective = perspective; }
+  constructor(kind: RepExerciseKind, perspective: CameraPerspective = "side") { this.kind = kind; this.perspective = perspective; }
 
   get repetitions() { return this.reps; }
   get currentPhase() { return this.phase; }
@@ -131,7 +132,11 @@ export class ExerciseRepRecognizer {
       angle = jointAngle(shoulderPoint, elbowPoint, wristPoint);
       alignment = jointAngle(shoulderPoint, hipPoint, anklePoint);
       if (this.perspective === "side" && alignment < 135) return this.invalidFrame("Keep shoulders, hips and ankles in a steady line.");
+    } else if (this.kind === "situps") {
+      // Side-view shoulder–hip–knee flexion prevents head-only movement counting.
+      angle = jointAngle(shoulderPoint, hipPoint, kneePoint);
     } else {
+      // Squats use hip–knee–ankle angle with a depth threshold and full return.
       angle = jointAngle(hipPoint, kneePoint, anklePoint);
     }
     this.angleWindow.push(angle);
@@ -345,40 +350,43 @@ export class ExerciseRepRecognizer {
       this.updateFrontPushupPhase(angle, now, bodyY, noseY, shoulderY);
       return;
     }
+    const startAngle = 155;
+    const bottomAngle = this.kind === "pushups" ? 95 : this.kind === "situps" ? 115 : 100;
+    const risingAngle = this.kind === "pushups" ? 117 : this.kind === "situps" ? 135 : 122;
     if ((this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") && now - this.cycleStartMs > MAX_REP_MS) {
       this.phase = "find-start";
       this.sawPartial = true;
     }
     switch (this.phase) {
       case "find-start":
-        if (angle >= 155 && alignment >= 135) { this.phase = "ready"; this.cycleStartBodyY = bodyY ?? null; }
+        if (angle >= startAngle && alignment >= 135) { this.phase = "ready"; this.cycleStartBodyY = bodyY ?? null; }
         break;
       case "ready":
-        if (angle <= 137) {
+        if (angle <= startAngle - 18) {
           this.phase = "lowering";
           this.cycleBodyTravel = 0;
           this.cycleStartBodyY = bodyY ?? this.cycleStartBodyY;
           this.cycleStartMs = now;
-          this.cycleStartAngle = 155;
+          this.cycleStartAngle = startAngle;
           this.lowestAngle = angle;
         }
         break;
       case "lowering":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
-        if (angle <= (this.kind === "pushups" ? 95 : 100)) this.phase = "bottom";
-        else if (angle >= 155) this.phase = "ready";
+        if (angle <= bottomAngle) this.phase = "bottom";
+        else if (angle >= startAngle) this.phase = "ready";
         break;
       case "bottom":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
-        if (angle >= (this.kind === "pushups" ? 117 : 122)) this.phase = "rising";
+        if (angle >= risingAngle) this.phase = "rising";
         break;
       case "rising":
         this.recordBodyTravel(bodyY);
         this.lowestAngle = Math.min(this.lowestAngle, angle);
-        if (angle <= (this.kind === "pushups" ? 95 : 100)) this.phase = "bottom";
-        else if (angle >= 155 && alignment >= 135) {
+        if (angle <= bottomAngle) this.phase = "bottom";
+        else if (angle >= startAngle && alignment >= 135) {
           const cycleDuration = now - this.cycleStartMs;
           const movementRange = this.cycleStartAngle - this.lowestAngle;
           if (cycleDuration >= MIN_REP_MS && movementRange >= 50) this.reps++;
