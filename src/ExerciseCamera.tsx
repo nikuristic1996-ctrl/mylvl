@@ -252,7 +252,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const currentConfidence = exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence;
   const counts = detectedAmount !== undefined && currentConfidence !== undefined && Number(reported) > 0
     ? validateExerciseEstimate({ detectedAmount, userEstimate: Number(reported), confidence: currentConfidence, minimumConfidence: 0.60, maximumDeviationPercent: 10 }) : null;
-  const xpReady = exercise === "plank" ? Boolean(plankAnalysis?.validationReady && (detectedAmount ?? 0) >= 10) : Boolean(analysis?.validationReady);
+  const xpReady = exercise === "plank" ? Boolean(plankAnalysis?.validationReady && (detectedAmount ?? 0) > 0) : Boolean(analysis?.validationReady);
   const expPreview = xpReady && detectedAmount !== undefined && currentConfidence !== undefined && counts?.status === "accepted" ? calculateActivityXp({ type: exercise, source: "camera", recordedSession: true,
     metrics: exercise === "plank" ? { holdSeconds: detectedAmount } : { repetitions: detectedAmount },
     exerciseValidation: { detectedAmount, userEstimate: Number(reported), confidence: currentConfidence, minimumConfidence: 0.60, maximumDeviationPercent: 10 } }).xp : 0;
