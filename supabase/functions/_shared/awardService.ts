@@ -54,10 +54,13 @@ export function prepareAward(
   }
 
   const cameraMeta = (row.metadata as Record<string, unknown> | undefined)?.exercise_validation;
-  const cameraSubmission = source === "camera" ? parseCameraExerciseSubmission(cameraMeta) : null;
-  if (source === "camera" && ((type !== "pushups" && type !== "squats") || !cameraSubmission
-    || !cameraSubmission.ok || cameraSubmission.value.sessionId !== requestKey
-    || row.source_key !== requestKey || row.validation_status !== "pose_validated")) {
+  const cameraSubmission = source === "camera" ? parseCameraExerciseSubmission(cameraMeta, type as "pushups" | "squats" | "situps" | "plank") : null;
+  if (source === "camera" && (!["pushups", "squats", "situps", "plank"].includes(type)
+    || !cameraSubmission || !cameraSubmission.ok || cameraSubmission.value.sessionId !== requestKey
+    || row.source_key !== requestKey || row.validation_status !== "pose_validated"
+    || (cameraSubmission.ok && (cameraSubmission.value.exerciseType === "plank"
+      ? numeric(row.hold_seconds) !== cameraSubmission.value.detectedAmount
+      : numeric(row.repetitions) !== cameraSubmission.value.detectedAmount)))) {
     return { requestKey, status: "ineligible", xp: 0, validationStatus: "rejected", ruleVersion: null,
       metadata: { reason: "invalid_camera_validation_metadata" } };
   }
@@ -72,8 +75,8 @@ export function prepareAward(
     noseCounterConfirmed: source === "nose_counter"
       && row.validation_status === "user_confirmed"
       && (row.metadata as Record<string, unknown> | undefined)?.nose_counter_confirmed === true,
-    exerciseValidation: camera ? { detectedAmount: camera.detectedReps, userEstimate: camera.reportedReps,
-      confidence: camera.confidence, minimumConfidence: 0.60 } : undefined,
+    exerciseValidation: camera ? { detectedAmount: camera.detectedAmount, userEstimate: camera.reportedAmount,
+      confidence: camera.confidence, minimumConfidence: 0.60, maximumDeviationPercent: 10 } : undefined,
     dailyMetricBefore: numeric(reservation.daily_metric_before) ?? 0,
     dailyStepsReconciled: false,
     metrics: {
