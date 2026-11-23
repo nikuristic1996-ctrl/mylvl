@@ -3028,3 +3028,20 @@ a {
 .camera-warning { color: #ffc768; }
 .camera-runtime, .camera-limits { display: block; margin-top: 11px; color: #939bad; font-size: 12px; line-height: 1.5; }
 @media (max-width: 520px) { .exercise-camera { padding: 16px; } .camera-preview-wrap, .camera-preview { min-height: 190px; } }
+
+
+/* Camera-free Nose Counter: large, touch-friendly control for nose taps. */
+.exercise-entry-options { display: grid; gap: 8px; margin: 14px 0; }
+.exercise-entry-options .camera-entry-button { margin: 0; }
+.nose-counter-modal { width: min(100%, 520px); }
+.nose-counter-copy { color: #aeb3c1; line-height: 1.55; }
+.nose-counter-status { padding: 12px 14px; border: 1px solid #373b45; border-radius: 12px; background: #1b1e27; color: #dfe2eb; margin: 16px 0; }
+.nose-counter-reading { text-align: center; padding: 18px 12px 24px; }
+.nose-counter-reading strong { display: block; color: #c3ff73; font-size: clamp(76px, 20vw, 112px); line-height: 1; letter-spacing: -4px; font-variant-numeric: tabular-nums; }
+.nose-counter-reading span { display: block; color: #aeb3c1; font-size: 16px; margin-top: 8px; }
+.nose-counter-push { width: 100%; min-height: 180px; border: 2px solid #c3ff73; border-radius: 22px; background: linear-gradient(145deg, #b9f66d, #9be64e); color: #11170c; font-size: clamp(28px, 7vw, 40px); font-weight: 850; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.nose-counter-push:active { transform: scale(.985); filter: brightness(.94); }
+.nose-counter-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.nose-counter-actions .secondary-button { min-height: 48px; }
+.nose-counter-error { color: #ff8585; margin: 10px 0; }
+@media (max-width: 520px) { .nose-counter-modal { padding: 18px; } .nose-counter-push { min-height: 160px; } }
