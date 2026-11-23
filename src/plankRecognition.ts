@@ -51,9 +51,9 @@ export class PlankHoldRecognizer {
     if (!frame.width || !frame.height || frame.landmarks.length < 29) return this.invalid("Keep the whole body in view from the side.");
     const required = Object.values(index).map((i) => frame.landmarks[i]);
     const scores = required.map(visibility);
-    if (scores.some((score) => score < MIN_VISIBILITY)) return this.invalid(frame, "Keep shoulder, elbow, hip, knee and ankle visible.");
+    if (scores.some((score) => score < MIN_VISIBILITY)) return this.invalid("Keep shoulder, elbow, hip, knee and ankle visible.");
     if (required.some((item) => item.x < 0.01 || item.x > 0.99 || item.y < 0.01 || item.y > 0.99)) {
-      return this.invalid(frame, "Move the camera back until your full body fits in frame.");
+      return this.invalid("Move the camera back until your full body fits in frame.");
     }
     const [shoulder, elbow, wrist, hip, knee, ankle] = required.map((item) => pixel(item, frame));
     const bodyLine = jointAngle(shoulder, hip, ankle);
@@ -61,7 +61,7 @@ export class PlankHoldRecognizer {
     const forearmAngle = jointAngle(shoulder, elbow, wrist);
     const valid = bodyLine >= MIN_BODY_LINE_ANGLE && kneeAngle >= MIN_KNEE_ANGLE
       && forearmAngle >= FOREARM_ANGLE_RANGE[0] && forearmAngle <= FOREARM_ANGLE_RANGE[1];
-    if (!valid) return this.invalid(frame, "Align shoulder, hip, knee and ankle; keep your forearm under the shoulder.");
+    if (!valid) return this.invalid("Align shoulder, hip, knee and ankle; keep your forearm under the shoulder.");
     const meanConfidence = scores.reduce((sum, score) => sum + score, 0) / scores.length;
     this.validFrames++;
     this.confidenceSum += meanConfidence;
