@@ -110,6 +110,6 @@ jobs:
           # The local Kong gateway answers CORS preflights itself. Test the function directly.
           edge_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' supabase_edge_runtime_mylvl-phase2-local)"
           test -n "$edge_ip"
-          AWARD_FUNCTION_URL="http://$edge_ip:9000/award-activity" \
+          AWARD_FUNCTION_URL="http://$edge_ip:8081/award-activity" \
             SUPABASE_URL="$API_URL" SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
             npm run test:integration
