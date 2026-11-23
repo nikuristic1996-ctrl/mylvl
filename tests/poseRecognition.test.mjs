@@ -194,9 +194,9 @@ test("sit-ups count shoulder-to-hip cycles but ignore head-only movement", () =>
   runCycle(recognizer, "situps", 1000);
   assert.equal(recognizer.repetitions, 1);
   const headOnly = new ExerciseRepRecognizer("situps", "side");
-  for (const angle of [170,170,170,170,170,170,170]) {
-    const frame = frameFor("situps", 170, 5000 + headOnly.repetitions * 100);
-    frame.landmarks[0].y = angle;
+  for (const [index, noseY] of [0.3,0.5,0.7,0.4,0.6,0.35].entries()) {
+    const frame = frameFor("situps", 170, 5000 + index * 200);
+    frame.landmarks[0].y = noseY;
     headOnly.process(frame);
   }
   assert.equal(headOnly.repetitions, 0);
