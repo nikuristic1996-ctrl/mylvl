@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import test, { after, before } from "node:test";
 import { createClient } from "@supabase/supabase-js";
 import { permanentProgressForXp, seasonProgressForXp } from "../src/gameEngine.ts";
@@ -10,6 +11,10 @@ const anonKey = process.env.SUPABASE_ANON_KEY ?? "";
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const functionUrl = process.env.AWARD_FUNCTION_URL ?? `${apiUrl}/functions/v1/award-activity`;
 const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+if (enabled) {
+  assert.ok(localHosts.has(new URL(apiUrl).hostname) && new URL(apiUrl).port === "54321", "Expected a disposable Supabase API on loopback port 54321.");
+  assert.ok(localHosts.has(new URL(functionUrl).hostname), "Refusing to send test awards to a remote handler.");
+}
 const admin = enabled && apiUrl && serviceKey
   ? createClient(apiUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
@@ -54,8 +59,8 @@ async function createSignedInUser() {
   return { id: created.user.id, client, token: signedIn.session.access_token };
 }
 
-async function award(user, { type = "Running", distance = 5, requestKey = randomUUID(), sourceKey = randomUUID() } = {}) {
-  const response = await fetch(functionUrl, {
+async function submitAward(user, payload, endpoint = functionUrl) {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       apikey: anonKey,
@@ -63,21 +68,25 @@ async function award(user, { type = "Running", distance = 5, requestKey = random
       "content-type": "application/json",
       origin: "http://localhost:5173",
     },
-    body: JSON.stringify({
-      requestKey,
-      activity: {
-        type,
-        date: new Date().toISOString(),
-        duration: 90,
-        distance,
-        source: "screenshot",
-        sourceKey,
-        screenshotConfirmed: true,
-        demo: false,
-      },
-    }),
+    body: JSON.stringify(payload),
   });
   return { response, body: await response.json() };
+}
+
+async function award(user, { type = "Running", distance = 5, requestKey = randomUUID(), sourceKey = randomUUID() } = {}) {
+  return submitAward(user, {
+    requestKey,
+    activity: {
+      type,
+      date: new Date().toISOString(),
+      duration: 90,
+      distance,
+      source: "screenshot",
+      sourceKey,
+      screenshotConfirmed: true,
+      demo: false,
+    },
+  });
 }
 
 test("duplicate requests persist one EXP transaction", { skip: !enabled }, async () => {
@@ -176,3 +185,175 @@ test("unknown or unsupported activity types are rejected before saving", { skip:
   assert.deepEqual(data, []);
 });
 
+function cameraWorkout(exerciseType, sessionId = randomUUID()) {
+  const plank = exerciseType === "plank";
+  const metric = plank
+    ? { reportedHoldSeconds: 30, detectedHoldSeconds: 30 }
+    : { reportedReps: 10, detectedReps: 10 };
+  return {
+    requestKey: sessionId,
+    activity: {
+      type: plank ? "Plank" : "Sit-ups",
+      date: new Date().toISOString(),
+      duration: 1,
+      source: "camera",
+      sourceKey: sessionId,
+      ...(plank ? { holdSeconds: 30 } : { reps: 10 }),
+      exerciseSession: {
+        sessionId,
+        exerciseType,
+        metricType: plank ? "hold_seconds" : "repetitions",
+        ...metric,
+        confidence: 0.95,
+        usableFrames: 120,
+        usableRatio: 0.95,
+        recordingDurationSeconds: 35,
+        modelVersion: "pose_landmarker_lite_float16_v1",
+        validationVersion: "mylvl-pose-v1",
+        deviationPercent: 0,
+      },
+    },
+  };
+}
+
+async function assertCameraAwards(user, expected) {
+  const [activities, attempts, transactions, permanent, seasonal] = await Promise.all([
+    admin.from("activities").select("id, request_key, source, source_key, validation_status, repetitions, hold_seconds").eq("user_id", user.id),
+    admin.from("activity_award_attempts").select("request_key, activity_id, transaction_id, status, result_xp, finalized_at").eq("user_id", user.id),
+    admin.from("experience_transactions").select("id, activity_id, exp_amount, transaction_type, season_id").eq("user_id", user.id),
+    user.client.from("user_progress").select("total_exp").eq("user_id", user.id).single(),
+    user.client.from("season_progress").select("season_exp").eq("user_id", user.id).eq("season_id", activeSeasonId).single(),
+  ]);
+  for (const result of [activities, attempts, transactions, permanent, seasonal]) assert.ifError(result.error);
+  for (const result of [activities, attempts, transactions]) assert.equal(result.data.length, expected.length);
+  for (const { session, xp, activityId } of expected) {
+    const activity = activities.data.find((row) => row.request_key === session.requestKey);
+    assert.ok(activity);
+    assert.equal(activity.id, activityId);
+    assert.equal(activity.source, "camera");
+    assert.equal(activity.source_key, session.requestKey);
+    assert.equal(activity.validation_status, "pose_validated");
+    assert.equal(activity.repetitions, session.activity.reps ?? null);
+    assert.equal(activity.hold_seconds, session.activity.holdSeconds ?? null);
+
+    const attempt = attempts.data.find((row) => row.request_key === session.requestKey);
+    assert.ok(attempt);
+    assert.equal(attempt.activity_id, activity.id);
+    assert.equal(attempt.status, "awarded");
+    assert.equal(attempt.result_xp, xp);
+    assert.ok(attempt.finalized_at);
+
+    const transaction = transactions.data.find((row) => row.activity_id === activity.id);
+    assert.ok(transaction);
+    assert.equal(transaction.id, attempt.transaction_id);
+    assert.equal(transaction.transaction_type, "activity");
+    assert.equal(transaction.exp_amount, xp);
+    assert.equal(transaction.season_id, activeSeasonId);
+  }
+  const total = expected.reduce((sum, award) => sum + award.xp, 0);
+  assert.equal(permanent.data.total_exp, total);
+  assert.equal(seasonal.data.season_exp, total);
+}
+
+async function loseResponse(user, session) {
+  let upstream;
+  let upstreamError;
+  const proxy = createServer(async (request, response) => {
+    try {
+      // Let the award finish, then drop the downstream connection before returning any headers.
+      const body = await Array.fromAsync(request);
+      const result = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          apikey: request.headers.apikey,
+          authorization: request.headers.authorization,
+          "content-type": request.headers["content-type"],
+          origin: request.headers.origin,
+        },
+        body: Buffer.concat(body),
+      });
+      upstream = { response: result, body: await result.json() };
+    } catch (error) {
+      upstreamError = error;
+    } finally {
+      response.destroy();
+    }
+  });
+  await new Promise((resolve, reject) => {
+    proxy.once("error", reject);
+    proxy.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    await assert.rejects(submitAward(user, session, `http://127.0.0.1:${proxy.address().port}`), /fetch failed/);
+    assert.ifError(upstreamError);
+    assert.equal(upstream.response.status, 200, JSON.stringify(upstream.body));
+    assert.equal(upstream.body.duplicate, false);
+    assert.equal(upstream.body.status, "awarded");
+    return upstream.body;
+  } finally {
+    await new Promise((resolve, reject) => proxy.close((error) => error ? reject(error) : resolve()));
+  }
+}
+
+for (const [exerciseType, xp] of [["situps", 20], ["plank", 18]]) {
+  test(`${exerciseType}: parallel identical HTTP requests finalize exactly one award`, { skip: !enabled }, async () => {
+    const user = await createSignedInUser();
+    const session = cameraWorkout(exerciseType);
+    const results = await Promise.all(Array.from({ length: 4 }, () => submitAward(user, session)));
+    for (const { response, body } of results) {
+      assert.equal(response.status, 200, JSON.stringify(body));
+      assert.equal(body.status, "awarded");
+      assert.equal(body.xp, xp);
+    }
+    assert.equal(results.filter(({ body }) => body.duplicate === false).length, 1);
+    const activityId = results[0].body.activity_id;
+    assert.ok(activityId);
+    assert.ok(results.every(({ body }) => body.activity_id === activityId));
+    await assertCameraAwards(user, [{ session, xp, activityId }]);
+  });
+
+  test(`${exerciseType}: retry after a dropped response returns the original award`, { skip: !enabled }, async () => {
+    const user = await createSignedInUser();
+    const session = cameraWorkout(exerciseType);
+    const lost = await loseResponse(user, session);
+    const expected = [{ session, xp, activityId: lost.activity_id }];
+    await assertCameraAwards(user, expected);
+    const retry = await submitAward(user, session);
+    assert.equal(retry.response.status, 200, JSON.stringify(retry.body));
+    assert.equal(retry.body.duplicate, true);
+    assert.equal(retry.body.status, "awarded");
+    assert.equal(retry.body.activity_id, lost.activity_id);
+    assert.equal(retry.body.xp, xp);
+    await assertCameraAwards(user, expected);
+  });
+
+  test(`${exerciseType}: separate session IDs each finalize their own award`, { skip: !enabled }, async () => {
+    const user = await createSignedInUser();
+    const sessions = [cameraWorkout(exerciseType), cameraWorkout(exerciseType)];
+    const results = await Promise.all(sessions.map((session) => submitAward(user, session)));
+    for (const { response, body } of results) {
+      assert.equal(response.status, 200, JSON.stringify(body));
+      assert.equal(body.status, "awarded");
+      assert.equal(body.duplicate, false);
+      assert.equal(body.xp, xp);
+    }
+    assert.notEqual(results[0].body.activity_id, results[1].body.activity_id);
+    await assertCameraAwards(user, sessions.map((session, i) => ({ session, xp, activityId: results[i].body.activity_id })));
+  });
+}
+
+test("camera requests with mismatched IDs are rejected without creating an award", { skip: !enabled }, async () => {
+  const user = await createSignedInUser();
+  const session = cameraWorkout("situps");
+  const result = await submitAward(user, { ...session, requestKey: randomUUID() });
+  assert.equal(result.response.status, 400);
+  assert.match(result.body.error, /keys must match/i);
+  for (const table of ["activities", "activity_award_attempts", "experience_transactions", "season_progress"]) {
+    const { data, error } = await admin.from(table).select("user_id").eq("user_id", user.id);
+    assert.ifError(error);
+    assert.deepEqual(data, []);
+  }
+  const { data, error } = await user.client.from("user_progress").select("total_exp").eq("user_id", user.id).single();
+  assert.ifError(error);
+  assert.equal(data.total_exp, 0);
+});

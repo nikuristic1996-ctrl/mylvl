@@ -63,6 +63,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const lastShownSecondRef = useRef(-1);
   const lastPositionRef = useRef(false);
   const startRef = useRef(0);
+  const sessionIdRef = useRef<string | null>(null);
   const runningRef = useRef(false);
   const stageRef = useRef<Stage>("setup");
   const [exercise, setExercise] = useState<ExerciseKind>("pushups");
@@ -127,6 +128,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
       lastShownSecondRef.current = -1;
       setLivePlankValid(false);
       setRepStatus(exercise === "plank" ? "Hold the plank position steadily." : "Start in the ready position, then complete the movement.");
+      sessionIdRef.current = crypto.randomUUID();
       startRef.current = performance.now(); lastInferenceRef.current = 0;
       runningRef.current = true; setStage("recording"); return;
     }
@@ -274,12 +276,13 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   }
 
   async function confirmActivity() {
+    const sessionId = sessionIdRef.current;
     const detectedAmount = exercise === "plank" ? plankAnalysis?.validSeconds : analysis?.repetitions;
     const confidence = exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence;
     const frames = exercise === "plank" ? plankAnalysis?.usableFrames : analysis?.usableFrames;
     const ratio = exercise === "plank" ? plankAnalysis?.usableRatio : analysis?.usableRatio;
     const durationSeconds = exercise === "plank" ? plankAnalysis?.recordingSeconds : analysis?.durationSeconds;
-    if (detectedAmount === undefined || confidence === undefined || frames === undefined || ratio === undefined || durationSeconds === undefined || !comparison || comparison.status !== "accepted" || !UUID.test(sessionId)) return;
+    if (detectedAmount === undefined || confidence === undefined || frames === undefined || ratio === undefined || durationSeconds === undefined || !comparison || comparison.status !== "accepted" || !sessionId || !UUID.test(sessionId)) return;
     setBusy(true);
     try {
       const type: ActivityType = exercise === "pushups" ? "Push-ups" : exercise === "squats" ? "Squats" : exercise === "situps" ? "Sit-ups" : "Plank";
@@ -300,7 +303,6 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
       if (saved) onClose();
     } finally { setBusy(false); }
   }
-  const sessionId = useRef(crypto.randomUUID()).current;
   const detectedAmount = exercise === "plank" ? plankAnalysis?.validSeconds : analysis?.repetitions;
   const currentConfidence = exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence;
   const counts = detectedAmount !== undefined && currentConfidence !== undefined && Number(reported) > 0

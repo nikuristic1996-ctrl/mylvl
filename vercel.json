@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "codex/phase-6-7-camera-idempotency": false
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
