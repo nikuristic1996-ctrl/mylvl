@@ -4,7 +4,7 @@ on:
   push:
     branches: [codex/phase-6-camera]
   pull_request:
-    branches: [main]
+    branches: [main, codex/phase-6-6-camera-stability]
 
 permissions:
   contents: read
@@ -106,7 +106,11 @@ jobs:
             -c 'create function public.rls_auto_enable() returns event_trigger language plpgsql as $fixture$ begin end; $fixture$' \
             -f supabase/schema.sql \
             -f supabase/migrations/20261113011810_phase_2_secure_progression.sql \
-            -f supabase/migrations/20261113150000_screenshot_duplicate_guard.sql
+            -f supabase/migrations/20261113150000_screenshot_duplicate_guard.sql \
+            -f supabase/migrations/20261119230337_phase_6_camera_exercise.sql \
+            -f supabase/migrations/20261120012504_camera_rep_tolerance.sql \
+            -f supabase/migrations/20261123190000_nose_counter_pushup_self_report.sql \
+            -f supabase/migrations/20261123210000_phase_6_5_camera_workouts.sql
 
           eval "$(supabase status --workdir "$stack" -o env)"
           export SUPABASE_URL="$API_URL" SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"

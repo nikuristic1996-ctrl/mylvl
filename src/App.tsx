@@ -301,7 +301,7 @@ export default function App() {
     if (session && supabase) {
       try {
         const result = await recordCloudActivity(activity);
-        if (result.duplicate) {
+        if (result.duplicate && !(activity.source === "camera" && result.status === "awarded")) {
           setToast("This activity was already imported.");
           return false;
         }
@@ -315,7 +315,9 @@ export default function App() {
         setProgressionStats(refreshed.progressionStats);
         setCosmeticRewards(refreshed.cosmeticRewards);
         setToast(
-          result.xp > 0
+          result.duplicate
+            ? "Camera workout already saved · progress synced."
+            : result.xp > 0
             ? `+${result.xp} XP awarded · nice work`
             : activity.demo
               ? "Demo activity saved. It earned no EXP."
