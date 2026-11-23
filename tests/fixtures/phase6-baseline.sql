@@ -50,6 +50,7 @@ create table public.activities (
   validation_deviation_percent numeric(8,3),
   request_key uuid,
   repetitions integer,
+  hold_seconds numeric(12,3),
   constraint activities_source_check check (source in ('manual','screenshot','apple_health','health_connect','garmin','strava')),
   constraint activities_activity_type_check check (activity_type in ('Running','running','pushups','squats')),
   constraint activities_user_source_key_key unique (user_id,source,source_key)
