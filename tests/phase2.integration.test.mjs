@@ -101,10 +101,11 @@ test("duplicate requests persist one EXP transaction", { skip: !enabled }, async
 
 test("concurrent Running casing variants share the same daily cap", { skip: !enabled }, async () => {
   const user = await createSignedInUser();
+  // Separate workouts for the screenshot duplicate guard, with the original 60 km total.
   const responses = await Promise.all([
-    award(user, { type: "Running", distance: 20 }),
-    award(user, { type: "running", distance: 21 }),
-    award(user, { type: "RUNNING", distance: 22 }),
+    award(user, { type: "Running", distance: 19 }),
+    award(user, { type: "running", distance: 20 }),
+    award(user, { type: "RUNNING", distance: 21 }),
   ]);
   assert.ok(responses.every((item) => item.response.status === 200));
   const { data, error } = await admin.from("experience_transactions")
