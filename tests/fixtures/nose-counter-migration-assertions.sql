@@ -4,7 +4,6 @@ declare
   first_result jsonb;
   retry_result jsonb;
   second_result jsonb;
-  finalize_result jsonb;
   before_activities integer;
   before_transactions integer;
   user_id constant uuid := '11111111-1111-4111-8111-111111111111';
@@ -38,13 +37,9 @@ begin
     raise exception 'Nose Counter source or self-report metadata was not stored';
   end if;
 
-  finalize_result := public.finalize_activity_award(
-    user_id,first_key,'eligible',50,'user_confirmed','1.0.0',
-    jsonb_build_object('validation_method','nose_touch_self_report','self_reported',true)
-  );
-  if (finalize_result->>'xp')::integer <> 50
-    or (select count(*) from public.experience_transactions) <> before_transactions + 1 then
-    raise exception 'Nose Counter award did not finalize consistently';
+  -- A reservation must not award EXP; the Edge Function finalizes it through the shared award RPC.
+  if (select count(*) from public.experience_transactions) <> before_transactions then
+    raise exception 'EXP was awarded before secure server finalization';
   end if;
 
   second_result := public.reserve_nose_counter_award(user_id,second_key,jsonb_build_object(
@@ -54,7 +49,7 @@ begin
   ));
   if coalesce((second_result->>'duplicate')::boolean,true)
     or (second_result->>'daily_metric_before')::numeric <> 10 then
-    raise exception 'Nose Counter daily metric aggregation did not include the first awarded set';
+    raise exception 'Nose Counter daily metric aggregation did not include the first pending set';
   end if;
 
   if (select count(*) from public.activities where source='nose_counter') <> 2
