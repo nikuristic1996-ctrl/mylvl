@@ -18,6 +18,8 @@ test("Nose Counter SQL validates source, confirmation, exercise and bounds", () 
   assert.match(migration, /v_repetitions not between 1 and 500/);
   assert.match(migration, /v_duration < 1 or v_duration > 180/);
   assert.match(migration, /10800/);
-  assert.match(migration, /reserve_activity_award\(p_user_id,p_request_key,v_payload\)/);
-  assert.match(migration, /daily_metric_before=coalesce/);
+  assert.match(migration, /pg_advisory_xact_lock/);
+  assert.match(migration, /sum\(metric_amount\)/);
+  assert.match(migration, /insert into public\.activity_award_attempts/);
+  assert.match(migration, /on conflict do nothing/);
 });
