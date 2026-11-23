@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, RotateCcw, Undo2, X, Zap } from "lucide-react";
 import type { Activity } from "./domain";
+import { NOSE_COUNTER_COOLDOWN_MS, noseCounterWaitRemainingMs } from "./noseCounter";
 
 type NoseCounterProps = {
   onClose(): void;
@@ -20,9 +21,17 @@ export function NoseCounter({ onClose, onSave }: NoseCounterProps) {
   const [count, setCount] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [waitUntil, setWaitUntil] = useState(0);
+  const [waitNow, setWaitNow] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const lastTap = useRef(0);
+
+  useEffect(() => {
+    if (waitUntil <= waitNow) return;
+    const timer = window.setTimeout(() => setWaitNow(Date.now()), Math.min(100, waitUntil - waitNow));
+    return () => window.clearTimeout(timer);
+  }, [waitUntil, waitNow]);
 
   useEffect(() => {
     if (stage !== "counting" || startedAt === null) return;
@@ -37,13 +46,17 @@ export function NoseCounter({ onClose, onSave }: NoseCounterProps) {
     setElapsedSeconds(0);
     setCount(0);
     setError("");
+    setWaitUntil(0);
+    setWaitNow(Date.now());
     setStage("counting");
   };
 
   const tap = () => {
     const now = Date.now();
-    if (now - lastTap.current < 220 || count >= 500) return;
+    if (noseCounterWaitRemainingMs(now, waitUntil) > 0 || count >= 500) return;
     lastTap.current = now;
+    setWaitUntil(now + NOSE_COUNTER_COOLDOWN_MS);
+    setWaitNow(now);
     setCount((current) => Math.min(500, current + 1));
     if ("vibrate" in navigator) navigator.vibrate?.(12);
   };
@@ -111,14 +124,14 @@ export function NoseCounter({ onClose, onSave }: NoseCounterProps) {
         )}
         {stage === "counting" && (
           <>
-            <button type="button" className="nose-counter-push" onClick={tap} aria-label="Count one push-up">PUSH-UP +1</button>
+            <button type="button" className={`nose-counter-push${noseCounterWaitRemainingMs(waitNow, waitUntil) > 0 ? " waiting" : ""}`} onClick={tap} disabled={noseCounterWaitRemainingMs(waitNow, waitUntil) > 0} aria-label={noseCounterWaitRemainingMs(waitNow, waitUntil) > 0 ? "Wait before counting the next push-up" : "Count one push-up"}>{noseCounterWaitRemainingMs(waitNow, waitUntil) > 0 ? "WAIT" : "PUSH UP"}</button>
             <div className="nose-counter-actions">
               <button type="button" className="secondary-button" onClick={() => setCount((current) => Math.max(0, current - 1))} disabled={count === 0}>
                 <Undo2 size={16} /> Undo tap
               </button>
               <button type="button" className="secondary-button" onClick={() => setStage("review")} disabled={count === 0}>Finish set</button>
             </div>
-            <button type="button" className="secondary-button modal-submit" onClick={() => { setCount(0); setStartedAt(Date.now()); setElapsedSeconds(0); lastTap.current = 0; }}>
+            <button type="button" className="secondary-button modal-submit" onClick={() => { setCount(0); setStartedAt(Date.now()); setElapsedSeconds(0); setWaitUntil(0); setWaitNow(Date.now()); lastTap.current = 0; }}>
               <RotateCcw size={15} /> Reset count
             </button>
           </>
