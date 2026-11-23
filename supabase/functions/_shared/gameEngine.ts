@@ -245,23 +245,11 @@ export function calculateActivityXp(input: ActivityXpInput): ActivityXpResult {
     intensity = result.multiplier;
     if (result.missing) warnings.push("Active calories are missing; the configurable base-rate fallback is used.");
   }
-  let xp: number;
-  if (input.type === "plank") {
-    // EXP is granted only for completed 10-second blocks, while the daily cap
-    // still tracks every validated second (including partial blocks).
-    const fullEnd = Math.min(already + metricAmount, rule.dailyCap);
-    const fullUnits = Math.max(0, Math.floor(fullEnd / rule.unitSize) - Math.floor(already / rule.unitSize));
-    const reducedBefore = Math.max(0, already - rule.dailyCap);
-    const reducedAfter = Math.max(0, already + metricAmount - rule.dailyCap);
-    const reducedUnits = Math.max(0, Math.floor(reducedAfter / rule.unitSize) - Math.floor(reducedBefore / rule.unitSize));
-    xp = Math.round((fullUnits + reducedUnits * rule.afterCapMultiplier) * rule.xpPerUnit * intensity);
-  } else {
-    xp = Math.round(
-      ((fullAmount + reducedAmount * rule.afterCapMultiplier) / rule.unitSize) *
-        rule.xpPerUnit *
-        intensity,
-    );
-  }
+  const xp = Math.round(
+    ((fullAmount + reducedAmount * rule.afterCapMultiplier) / rule.unitSize) *
+      rule.xpPerUnit *
+      intensity,
+  );
   return {
     xp,
     status: "eligible",
