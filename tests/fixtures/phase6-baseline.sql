@@ -52,7 +52,7 @@ create table public.activities (
   repetitions integer,
   hold_seconds numeric(12,3),
   constraint activities_source_check check (source in ('manual','screenshot','apple_health','health_connect','garmin','strava')),
-  constraint activities_activity_type_check check (activity_type in ('Running','running','pushups','squats')),
+  constraint activities_activity_type_check check (activity_type in ('Walking','Running','Strength','Bodyweight','Yoga','Pilates','Cycling','Swimming','Other','walking','running','cycling','swimming','strength','yoga','pilates','pushups','squats','situps','plank','pullups')),
   constraint activities_user_source_key_key unique (user_id,source,source_key)
 );
 create table public.experience_transactions (
