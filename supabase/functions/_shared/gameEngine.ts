@@ -32,7 +32,7 @@ export function normalizeActivityType(value: unknown): ActivityType | null {
   };
   return aliases[key] ?? null;
 }
-export type ActivitySource = "provider" | "screenshot" | "camera" | "manual";
+export type ActivitySource = "provider" | "screenshot" | "camera" | "manual" | "nose_counter";
 export type ActivityMetrics = {
   distanceKm?: number;
   steps?: number;
@@ -135,8 +135,10 @@ export type ActivityXpInput = {
   demo?: boolean;
   /** Walking EXP stays pending until running-session steps have been reconciled. */
   dailyStepsReconciled?: boolean;
-  /** Must be true for a provider/camera session; manual values never qualify. */
+  /** Must be true for a provider/camera/self-reported session; manual values never qualify. */
   recordedSession?: boolean;
+  /** Explicit confirmation stored by the server for a Nose Counter set. */
+  noseCounterConfirmed?: boolean;
   exerciseValidation?: ExerciseValidation;
 };
 
@@ -204,16 +206,23 @@ export function calculateActivityXp(input: ActivityXpInput): ActivityXpResult {
   }
 
   let validation: ActivityXpResult["validation"] =
-    input.source === "screenshot" ? "user-confirmed" : "provider-recorded";
+    input.source === "screenshot" || input.source === "nose_counter" ? "user-confirmed" : "provider-recorded";
   if (rule.exerciseValidationRequired) {
-    if (input.source !== "camera" || !input.exerciseValidation) {
-      return blockedResult(input.type, "Local camera validation is required.", "requires-review");
+    if (input.source === "nose_counter") {
+      if (input.type !== "pushups" || input.noseCounterConfirmed !== true || !input.recordedSession) {
+        return blockedResult(input.type, "A confirmed Nose Counter push-up set is required.", "requires-review");
+      }
+      validation = "user-confirmed";
+    } else {
+      if (input.source !== "camera" || !input.exerciseValidation) {
+        return blockedResult(input.type, "Local camera validation is required.", "requires-review");
+      }
+      const result = validateExerciseEstimate(input.exerciseValidation);
+      if (result.status !== "accepted") {
+        return blockedResult(input.type, `Exercise validation status: ${result.status}.`, "requires-review");
+      }
+      validation = "pose-validated";
     }
-    const result = validateExerciseEstimate(input.exerciseValidation);
-    if (result.status !== "accepted") {
-      return blockedResult(input.type, `Exercise validation status: ${result.status}.`, "requires-review");
-    }
-    validation = "pose-validated";
   }
 
   const metricAmount = value;
