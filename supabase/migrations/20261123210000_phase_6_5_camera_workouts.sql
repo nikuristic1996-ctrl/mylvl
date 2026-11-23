@@ -54,9 +54,9 @@ begin
     v_reported_amount := v_reported_hold;
     v_detected_amount := v_detected_hold;
     if v_reported_hold is null or v_detected_hold is null
-      or v_reported_hold < 10 or v_reported_hold > 90
-      or v_detected_hold < 10 or v_detected_hold > 90 then
-      raise exception 'Plank duration must be between 10 and 90 validated seconds';
+      or v_reported_hold <= 0 or v_reported_hold > 90
+      or v_detected_hold <= 0 or v_detected_hold > 90 then
+      raise exception 'Plank duration must be greater than 0 and no more than 90 validated seconds';
     end if;
   else
     v_metric_type := 'repetitions';
