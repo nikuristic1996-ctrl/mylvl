@@ -103,8 +103,13 @@ jobs:
           psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 \
             -c 'create function public.rls_auto_enable() returns event_trigger language plpgsql as $fixture$ begin end; $fixture$' \
             -f supabase/schema.sql \
-            -f supabase/migrations/20261113011810_phase_2_secure_progression.sql
+            -f supabase/migrations/20261113011810_phase_2_secure_progression.sql \
+            -f supabase/migrations/20261113150000_screenshot_duplicate_guard.sql
 
           eval "$(supabase status --workdir "$stack" -o env)"
-          SUPABASE_URL="$API_URL" SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+          # The local Kong gateway answers CORS preflights itself. Test the function directly.
+          edge_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' supabase_edge_runtime_mylvl-phase2-local)"
+          test -n "$edge_ip"
+          AWARD_FUNCTION_URL="http://$edge_ip:9000/award-activity" \
+            SUPABASE_URL="$API_URL" SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
             npm run test:integration

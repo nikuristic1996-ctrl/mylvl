@@ -103,8 +103,8 @@ test("concurrent Running casing variants share the same daily cap", { skip: !ena
   const user = await createSignedInUser();
   const responses = await Promise.all([
     award(user, { type: "Running", distance: 20 }),
-    award(user, { type: "running", distance: 20 }),
-    award(user, { type: "RUNNING", distance: 20 }),
+    award(user, { type: "running", distance: 21 }),
+    award(user, { type: "RUNNING", distance: 22 }),
   ]);
   assert.ok(responses.every((item) => item.response.status === 200));
   const { data, error } = await admin.from("experience_transactions")
