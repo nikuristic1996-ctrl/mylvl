@@ -73,3 +73,36 @@ jobs:
           name: phase6-generated-lockfile
           path: package-lock.json
           if-no-files-found: ignore
+
+  integration:
+    name: Supabase integration (disposable stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --package-lock-only --ignore-scripts
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.58.5
+      - name: Start isolated Supabase and run existing integration tests
+        env:
+          PHASE2_INTEGRATION: '1'
+        run: |
+          stack="$RUNNER_TEMP/mylvl-integration"
+          mkdir -p "$stack/supabase"
+          cp supabase/config.toml "$stack/supabase/"
+          cp -r supabase/functions "$stack/supabase/"
+          trap 'supabase stop --workdir "$stack" --no-backup' EXIT
+
+          supabase start --workdir "$stack" -x studio,imgproxy,inbucket,logflare,vector
+          psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 \
+            -f supabase/schema.sql \
+            -f supabase/migrations/20261113011810_phase_2_secure_progression.sql
+
+          eval "$(supabase status --workdir "$stack" -o env)"
+          SUPABASE_URL="$API_URL" SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+            npm run test:integration
