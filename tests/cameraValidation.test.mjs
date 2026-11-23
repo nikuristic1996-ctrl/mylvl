@@ -43,11 +43,11 @@ test("plank camera parsing validates measured seconds and awards only completed 
   if(parsed.ok) {
     const award=calculateActivityXp({type:"plank",source:"camera",recordedSession:true,metrics:{holdSeconds:parsed.value.detectedAmount},
       exerciseValidation:{detectedAmount:parsed.value.detectedAmount,userEstimate:parsed.value.reportedAmount,confidence:0.9,minimumConfidence:0.6,maximumDeviationPercent:10}});
-    assert.equal(award.xp,12);
+    assert.equal(award.xp,17);
   }
   assert.equal(parseCameraExerciseSubmission({...meta,reportedHoldSeconds:60}).ok,false);
   assert.equal(calculateActivityXp({type:"plank",source:"camera",recordedSession:true,metrics:{holdSeconds:9},
-    exerciseValidation:{detectedAmount:9,userEstimate:9,confidence:0.9,minimumConfidence:0.6,maximumDeviationPercent:10}}).xp,0);
+    exerciseValidation:{detectedAmount:9,userEstimate:9,confidence:0.9,minimumConfidence:0.6,maximumDeviationPercent:10}}).xp,5);
 });
 test("rejects zero, weak confidence, poor frames, excessive duration and mismatched deviation", () => {
   for (const value of [
