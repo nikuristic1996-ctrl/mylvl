@@ -57,7 +57,6 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const lastInferenceRef = useRef(0);
   const lastShownSecondRef = useRef(-1);
   const lastPositionRef = useRef(false);
-  const liveRepsRef = useRef(0);
   const startRef = useRef(0);
   const runningRef = useRef(false);
   const stageRef = useRef<Stage>("setup");
@@ -70,7 +69,6 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const [cameraLive, setCameraLive] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const [elapsed, setElapsed] = useState(0);
-  const [liveReps, setLiveReps] = useState(0);
   const [livePlankValid, setLivePlankValid] = useState(false);
   const [repStatus, setRepStatus] = useState("Waiting for a clear arm cycle.");
   const [reported, setReported] = useState("");
@@ -115,7 +113,7 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     if (countdown <= 0) {
       recognizerRef.current = exercise === "plank" ? null : new ExerciseRepRecognizer(exercise, perspective);
       plankRecognizerRef.current = exercise === "plank" ? new PlankHoldRecognizer() : null;
-      liveRepsRef.current = 0; setLiveReps(0); setLivePlankValid(false);
+      setLivePlankValid(false);
       setRepStatus(exercise === "plank" ? "Hold the plank position steadily." : "Start in the ready position, then complete the movement.");
       startRef.current = performance.now(); lastInferenceRef.current = 0;
       runningRef.current = true; setStage("recording"); return;
@@ -148,10 +146,6 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
             } else {
               const result = recognizerRef.current?.process(frame);
               if (result) {
-                if (result.repetitions !== liveRepsRef.current) {
-                  liveRepsRef.current = result.repetitions;
-                  setLiveReps(result.repetitions);
-                }
                 const status = result.warning ? `Adjust: ${result.warning}` : `Tracking movement: ${result.phase}.`;
                 setRepStatus((previous) => previous === status ? previous : status);
               }
