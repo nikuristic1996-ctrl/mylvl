@@ -2385,7 +2385,7 @@ function ActivityModal({
         </div>
         <p>Capture the effort. We’ll take care of the XP.</p>
         <div className="exercise-entry-options">
-          {cameraAvailable && <button type="button" className="secondary-button camera-entry-button" onClick={() => setCameraMode(true)}><Camera size={16}/> Record push-ups or squats with camera</button>}
+          {cameraAvailable && <button type="button" className="secondary-button camera-entry-button" onClick={() => setCameraMode(true)}><Camera size={16}/> Record push-ups, squats, sit-ups or plank with camera</button>}
           <button type="button" className="secondary-button camera-entry-button nose-counter-entry-button" onClick={() => setNoseCounterMode(true)}>Push-ups · Nose counter (no camera)</button>
         </div>
         <label className="field-label">
