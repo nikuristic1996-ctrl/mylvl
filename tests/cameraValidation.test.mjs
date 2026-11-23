@@ -34,7 +34,7 @@ test("sit-up camera parsing requires a matching exercise type and accepts the 10
   assert.equal(parseCameraExerciseSubmission(valid({exerciseType:"squats",reportedReps:10,detectedReps:9}),"situps").ok,false);
 });
 
-test("plank camera parsing validates measured seconds and awards only completed 10 second blocks", () => {
+test("plank camera parsing validates measured seconds and preserves proportional EXP", () => {
   const meta={sessionId:"d2719d5a-0d2a-4aca-8bb7-85e88c136e1f",exerciseType:"plank",metricType:"hold_seconds",
     reportedHoldSeconds:30,detectedHoldSeconds:29,confidence:0.9,recordingDurationSeconds:35,
     modelVersion:"pose_landmarker_lite_float16_v1",validationVersion:"mylvl-pose-v1",usableFrames:30,usableRatio:0.9,deviationPercent:3.3333333333333335};
