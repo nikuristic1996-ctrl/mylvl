@@ -204,15 +204,15 @@ test("sit-ups count shoulder-to-hip cycles but ignore head-only movement", () =>
 
 test("plank uses timestamped valid posture, pauses on lost posture, and stops bridging long gaps", () => {
   const recognizer = new PlankHoldRecognizer();
-  for(let t=1000;t<=5000;t+=100) recognizer.process(plankFrame(t));
+  for(let t=1000;t<=3000;t+=100) recognizer.process(plankFrame(t));
   const beforeBreak = recognizer.validSeconds;
-  recognizer.process(plankFrame(5100,true));
-  for(let t=5200;t<=9000;t+=100) recognizer.process(plankFrame(t));
+  recognizer.process(plankFrame(3100,true));
+  for(let t=10000;t<=12000;t+=100) recognizer.process(plankFrame(t));
   const afterBreak = recognizer.validSeconds;
-  assert.ok(beforeBreak >= 0.7);
+  assert.ok(beforeBreak >= 1.5);
   assert.ok(afterBreak > beforeBreak);
   assert.ok(afterBreak < 5);
-  const result = recognizer.finish(8);
+  const result = recognizer.finish(11);
   assert.equal(result.validationReady,true);
   assert.ok(result.invalidSeconds > 0);
 });
