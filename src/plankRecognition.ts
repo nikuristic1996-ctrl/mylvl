@@ -48,7 +48,7 @@ export class PlankHoldRecognizer {
 
   process(frame: PoseFrame): PlankFrameResult {
     this.totalFrames++;
-    if (!frame.width || !frame.height || frame.landmarks.length < 29) return this.invalid(frame, "Keep the whole body in view from the side.");
+    if (!frame.width || !frame.height || frame.landmarks.length < 29) return this.invalid("Keep the whole body in view from the side.");
     const required = Object.values(index).map((i) => frame.landmarks[i]);
     const scores = required.map(visibility);
     if (scores.some((score) => score < MIN_VISIBILITY)) return this.invalid(frame, "Keep shoulder, elbow, hip, knee and ankle visible.");
@@ -92,7 +92,7 @@ export class PlankHoldRecognizer {
     };
   }
 
-  private invalid(frame: PoseFrame, warning: string): PlankFrameResult {
+  private invalid(warning: string): PlankFrameResult {
     this.lastValidAt = null;
     this.warningCounts.set(warning,(this.warningCounts.get(warning)??0)+1);
     return { valid: false, validSeconds: this.validSeconds, confidence: this.currentConfidence(), warning };
