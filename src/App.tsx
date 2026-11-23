@@ -51,6 +51,7 @@ import { supabase } from "./supabase";
 import { fingerprintScreenshot, parseLocalizedNumber, recognizeScreenshot, screenshotFileError, type ScreenshotDraft, type ScreenshotParseReport, type ScreenshotOcrDiagnostics } from "./screenshotOcr";
 import { estimateRunningSteps } from "./stepEstimation";
 import { ExerciseCamera } from "./ExerciseCamera";
+import { NoseCounter } from "./NoseCounter";
 import { EMPTY_PROGRESSION_STATS, highestHistoricalSeasonRank, normalizeProgressionStats, seasonCountdown, seasonRankProgress, type ProgressionStats } from "./progressionStats";
 import {
   loadCloudData,
@@ -2331,6 +2332,7 @@ function ActivityModal({
   cameraAvailable: boolean;
 }) {
   const [cameraMode, setCameraMode] = useState(false);
+  const [noseCounterMode, setNoseCounterMode] = useState(false);
   const [type, setType] = useState<ActivityType>("Running");
   const [duration, setDuration] = useState("30");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -2338,6 +2340,7 @@ function ActivityModal({
   const [calories, setCalories] = useState("");
   const [notes, setNotes] = useState("");
   if (cameraMode) return <ExerciseCamera onClose={() => setCameraMode(false)} onSave={onSave} />;
+  if (noseCounterMode) return <NoseCounter onClose={() => setNoseCounterMode(false)} onSave={onSave} />;
   const save = (event: FormEvent) => {
     event.preventDefault();
     void onSave({
@@ -2381,7 +2384,10 @@ function ActivityModal({
           </button>
         </div>
         <p>Capture the effort. We’ll take care of the XP.</p>
-        {cameraAvailable && <button type="button" className="secondary-button camera-entry-button" onClick={() => setCameraMode(true)}><Camera size={16}/> Record push-ups or squats with camera</button>}
+        <div className="exercise-entry-options">
+          {cameraAvailable && <button type="button" className="secondary-button camera-entry-button" onClick={() => setCameraMode(true)}><Camera size={16}/> Record push-ups or squats with camera</button>}
+          <button type="button" className="secondary-button camera-entry-button nose-counter-entry-button" onClick={() => setNoseCounterMode(true)}>Push-ups · Nose counter (no camera)</button>
+        </div>
         <label className="field-label">
           Activity type
           <select

@@ -43,7 +43,8 @@ export function prepareAward(
   const type: ActivityType | null = normalizeActivityType(row.activity_type);
   const source = row.source === "screenshot" ? "screenshot"
     : row.source === "manual" ? "manual"
-    : row.source === "camera" ? "camera" : null;
+    : row.source === "camera" ? "camera"
+    : row.source === "nose_counter" ? "nose_counter" : null;
   const demo = Boolean((row.metadata as Record<string, unknown> | undefined)?.demo);
   if (!type || !source) {
     return {
@@ -67,7 +68,10 @@ export function prepareAward(
     source,
     demo,
     screenshotConfirmed: row.validation_status === "user_confirmed",
-    recordedSession: source === "camera",
+    recordedSession: source === "camera" || source === "nose_counter",
+    noseCounterConfirmed: source === "nose_counter"
+      && row.validation_status === "user_confirmed"
+      && (row.metadata as Record<string, unknown> | undefined)?.nose_counter_confirmed === true,
     exerciseValidation: camera ? { detectedAmount: camera.detectedReps, userEstimate: camera.reportedReps,
       confidence: camera.confidence, minimumConfidence: 0.60 } : undefined,
     dailyMetricBefore: numeric(reservation.daily_metric_before) ?? 0,
@@ -100,8 +104,9 @@ export function prepareAward(
       validation: result.validation,
       reason: result.reason ?? null,
       warnings: result.warnings,
-      validation_method: demo ? "demo_extraction" : result.validation === "user-confirmed"
-        ? "screenshot_user_confirmation" : result.validation === "pose-validated" ? "local_pose_landmarks" : "not_verified",
+      validation_method: demo ? "demo_extraction" : source === "nose_counter" && result.validation === "user-confirmed"
+        ? "nose_touch_self_report" : result.validation === "user-confirmed"
+          ? "screenshot_user_confirmation" : result.validation === "pose-validated" ? "local_pose_landmarks" : "not_verified",
       ...(camera ? { exercise_validation: camera } : {}),
     },
   };

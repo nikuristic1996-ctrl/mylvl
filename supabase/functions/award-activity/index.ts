@@ -63,6 +63,19 @@ Deno.serve(async (request: Request) => {
 
     // Whitelist client fields. Any client-submitted XP, validation status, or level is ignored.
     const cameraResult = incoming.source === "camera" ? parseCameraExerciseSubmission(incoming.exerciseSession) : null;
+    const isNoseCounter = incoming.source === "nose_counter";
+    if (isNoseCounter) {
+      const reps = Number(incoming.reps ?? incoming.repetitions);
+      const sessionDate = new Date(String(incoming.date ?? ""));
+      const duration = Number(incoming.duration);
+      if (activityType !== "pushups" || incoming.noseCounterConfirmed !== true || !Number.isInteger(reps) || reps < 1 || reps > 500) {
+        return json({ error: "Nose Counter submissions require a confirmed set of 1–500 push-ups." }, 400, origin);
+      }
+      if (!Number.isFinite(duration) || duration < 1 || duration > 180 || !Number.isFinite(sessionDate.getTime()) || Math.abs(Date.now() - sessionDate.getTime()) > 3 * 60 * 60_000) {
+        return json({ error: "Nose Counter sets must have a valid duration and recent session time." }, 400, origin);
+      }
+      if (incoming.sourceKey !== requestKey) return json({ error: "The Nose Counter session and idempotency keys must match." }, 400, origin);
+    }
     let cameraData = null;
     if (incoming.source === "camera") {
       if ((activityType !== "pushups" && activityType !== "squats") || !cameraResult?.ok) {
@@ -77,7 +90,7 @@ Deno.serve(async (request: Request) => {
         return json({ error: "Camera exercise sessions must be submitted close to their recording time." }, 400, origin);
       }
     }
-    if (incoming.source !== "manual" && incoming.source !== "screenshot" && incoming.source !== "camera") {
+    if (incoming.source !== "manual" && incoming.source !== "screenshot" && incoming.source !== "camera" && !isNoseCounter) {
       return json({ error: "Provider activities must enter through their authenticated server integration." }, 400, origin);
     }
     const activity = {
@@ -97,6 +110,7 @@ Deno.serve(async (request: Request) => {
       screenshot_confirmed: incoming.source === "screenshot" && incoming.screenshotConfirmed === true,
       demo: incoming.demo === true,
       exercise_validation: cameraData ?? undefined,
+      nose_counter_confirmed: isNoseCounter,
     };
     if (activity.source === "screenshot") {
       const date = new Date(String(activity.activity_date ?? ""));
@@ -113,7 +127,8 @@ Deno.serve(async (request: Request) => {
         return json({ error: "Activity distance must be greater than 0 and no more than 1,000 km." }, 400, origin);
       }
     }
-    const reserveFunction = activity.source === "camera" ? "reserve_camera_exercise_award" : "reserve_screenshot_activity_award";
+    const reserveFunction = activity.source === "camera" ? "reserve_camera_exercise_award"
+      : activity.source === "nose_counter" ? "reserve_nose_counter_award" : "reserve_screenshot_activity_award";
     const { data: rawReservation, error: reserveError } = await adminClient.rpc(reserveFunction, {
       p_user_id: authData.user.id,
       p_request_key: requestKey,

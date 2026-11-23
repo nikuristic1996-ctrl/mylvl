@@ -93,6 +93,40 @@ test("requires evidence and user confirmation for screenshot-derived activity", 
   assert.equal(confirmed.validation, "user-confirmed");
 });
 
+test("Nose Counter push-ups award self-reported EXP only after explicit confirmation", () => {
+  const accepted = calculateActivityXp({
+    type: "pushups", source: "nose_counter", recordedSession: true,
+    noseCounterConfirmed: true, metrics: { repetitions: 12 },
+  });
+  assert.equal(accepted.xp, 60);
+  assert.equal(accepted.status, "eligible");
+  assert.equal(accepted.validation, "user-confirmed");
+
+  const unconfirmed = calculateActivityXp({
+    type: "pushups", source: "nose_counter", recordedSession: true,
+    metrics: { repetitions: 12 },
+  });
+  assert.equal(unconfirmed.xp, 0);
+  assert.equal(unconfirmed.status, "requires-review");
+
+  const wrongType = calculateActivityXp({
+    type: "squats", source: "nose_counter", recordedSession: true,
+    noseCounterConfirmed: true, metrics: { repetitions: 12 },
+  });
+  assert.equal(wrongType.xp, 0);
+  assert.equal(wrongType.status, "requires-review");
+});
+
+test("Nose Counter uses the existing push-up daily cap and diminishing returns", () => {
+  const nearCap = calculateActivityXp({
+    type: "pushups", source: "nose_counter", recordedSession: true,
+    noseCounterConfirmed: true, dailyMetricBefore: 95, metrics: { repetitions: 10 },
+  });
+  assert.equal(nearCap.xp, 31);
+  assert.equal(ACTIVITY_RULES_V1.pushups.xpPerUnit, 5);
+  assert.equal(ACTIVITY_RULES_V1.pushups.dailyCap, 100);
+});
+
 test("requires a recorded session for recorded activity providers", () => {
   const result = calculateActivityXp({
     type: "running",

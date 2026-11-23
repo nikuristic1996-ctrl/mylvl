@@ -50,6 +50,10 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/phase6-baseline.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261119230337_phase_6_camera_exercise.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/phase6-migration-assertions.sql
+      - name: Apply Nose Counter migration and verify secure self-report awards
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261123190000_nose_counter_pushup_self_report.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/nose-counter-migration-assertions.sql
       - uses: actions/upload-artifact@v4
         if: always()
         with:
