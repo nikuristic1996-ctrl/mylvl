@@ -2,7 +2,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { finishAward, prepareAward, type ReservedActivity } from "../_shared/awardService.ts";
 import { normalizeActivityType } from "../_shared/gameEngine.ts";
-import { parseCameraExerciseSubmission } from "../_shared/cameraValidation.ts";
+import { parseCameraExerciseSubmission, type CameraExerciseType } from "../_shared/cameraValidation.ts";
 
 import { corsHeaders, isOriginAllowed } from "../_shared/cors.ts";
 const corsSettings = {
@@ -62,7 +62,7 @@ Deno.serve(async (request: Request) => {
     if (!activityType) return json({ error: "Unknown or unsupported activity type." }, 400, origin);
 
     // Whitelist client fields. Any client-submitted XP, validation status, or level is ignored.
-    const cameraResult = incoming.source === "camera" ? parseCameraExerciseSubmission(incoming.exerciseSession) : null;
+    const cameraResult = incoming.source === "camera" ? parseCameraExerciseSubmission(incoming.exerciseSession, activityType as CameraExerciseType) : null;
     const isNoseCounter = incoming.source === "nose_counter";
     if (isNoseCounter) {
       const reps = Number(incoming.reps ?? incoming.repetitions);
@@ -78,8 +78,8 @@ Deno.serve(async (request: Request) => {
     }
     let cameraData = null;
     if (incoming.source === "camera") {
-      if ((activityType !== "pushups" && activityType !== "squats") || !cameraResult?.ok) {
-        return json({ error: cameraResult && !cameraResult.ok ? cameraResult.error : "Camera sessions only support push-ups and squats." }, 400, origin);
+      if (!["pushups", "squats", "situps", "plank"].includes(activityType) || !cameraResult?.ok) {
+        return json({ error: cameraResult && !cameraResult.ok ? cameraResult.error : "Camera sessions support push-ups, squats, sit-ups and planks." }, 400, origin);
       }
       cameraData = cameraResult.value;
       if (requestKey !== cameraData.sessionId || incoming.sourceKey !== cameraData.sessionId) {
@@ -102,8 +102,8 @@ Deno.serve(async (request: Request) => {
       steps: incoming.steps,
       calories: incoming.calories,
       active_calories: incoming.activeCalories,
-      repetitions: cameraData ? cameraData.detectedReps : incoming.repetitions ?? incoming.reps,
-      hold_seconds: incoming.holdSeconds,
+      repetitions: cameraData?.metricType === "repetitions" ? cameraData.detectedAmount : incoming.repetitions ?? incoming.reps,
+      hold_seconds: cameraData?.metricType === "hold_seconds" ? cameraData.detectedAmount : incoming.holdSeconds,
       notes: incoming.notes,
       source: incoming.source,
       source_key: incoming.sourceKey,
