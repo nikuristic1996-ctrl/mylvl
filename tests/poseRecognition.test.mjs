@@ -1,12 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ExerciseRepRecognizer, jointAngle } from "../src/poseRecognition.ts";
+import { PlankHoldRecognizer } from "../src/plankRecognition.ts";
 
 function frameFor(kind, angle, timestampMs, visibility = 0.98) {
   const points = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility }));
   if (kind === "squats") {
     points[11] = { x: 0.45, y: 0.15, visibility }; points[23] = { x: 0.5, y: 0.3, visibility };
     points[25] = { x: 0.5, y: 0.5, visibility }; points[27] = { x: 0.5 + 0.2 * Math.cos((angle - 90) * Math.PI / 180), y: 0.5 + 0.2 * Math.sin((angle - 90) * Math.PI / 180), visibility };
+  } else if (kind === "situps") {
+    points[23] = { x: 0.5, y: 0.5, visibility };
+    points[25] = { x: 0.7, y: 0.5, visibility };
+    points[11] = { x: 0.5 + 0.2 * Math.cos(angle * Math.PI / 180), y: 0.5 - 0.2 * Math.sin(angle * Math.PI / 180), visibility };
+    points[13] = { x: 0.5, y: 0.6, visibility }; points[15] = { x: 0.4, y: 0.6, visibility };
+    points[27] = { x: 0.8, y: 0.5, visibility };
   } else {
     points[11] = { x: 0.3, y: 0.4, visibility }; points[13] = { x: 0.4, y: 0.4, visibility };
     points[15] = angle > 150 ? { x: 0.5, y: 0.4, visibility } : { x: 0.4 + 0.1 * Math.cos((180 - angle) * Math.PI / 180), y: 0.4 + 0.1 * Math.sin((180 - angle) * Math.PI / 180), visibility };
@@ -51,7 +58,7 @@ test("joint angles are stable around straight and bent joints", () => {
   assert.equal(Math.round(jointAngle({x:0,y:0},{x:1,y:0},{x:1,y:1})), 90);
 });
 
-for (const kind of ["pushups", "squats"]) {
+for (const kind of ["pushups", "squats", "situps"]) {
   test(`${kind}: counts one full movement and no stationary pose`, () => {
     const recognizer = new ExerciseRepRecognizer(kind);
     for (let i=0; i<24; i++) recognizer.process(frameFor(kind, 170, 1000+i*200));
@@ -168,3 +175,53 @@ test("front push-ups: follows the shoulder anchor when it moves more clearly tha
   assert.equal(recognizer.repetitions, 1);
 });
 
+
+function plankFrame(timestampMs, bent = false, visibility = 0.98) {
+  const points = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility }));
+  const shoulder = { x: 0.25, y: 0.35 };
+  const hip = bent ? { x: 0.55, y: 0.49 } : { x: 0.55, y: 0.35 };
+  const ankle = { x: 0.82, y: 0.35 };
+  const knee = { x: 0.69, y: 0.35 };
+  const elbow = { x: 0.25, y: 0.45 };
+  const wrist = { x: 0.35, y: 0.45 };
+  for (const [index, point] of [[11,shoulder],[13,elbow],[15,wrist],[23,hip],[25,knee],[27,ankle]]) points[index] = { ...point, visibility };
+  for (const [left,right] of [[11,12],[13,14],[15,16],[23,24],[25,26],[27,28]]) points[right] = { ...points[left] };
+  return { landmarks: points, width: 640, height: 480, timestampMs };
+}
+
+test("sit-ups count shoulder-to-hip cycles but ignore head-only movement", () => {
+  const recognizer = new ExerciseRepRecognizer("situps", "side");
+  runCycle(recognizer, "situps", 1000);
+  assert.equal(recognizer.repetitions, 1);
+  const headOnly = new ExerciseRepRecognizer("situps", "side");
+  for (const angle of [170,170,170,170,170,170,170]) {
+    const frame = frameFor("situps", 170, 5000 + headOnly.repetitions * 100);
+    frame.landmarks[0].y = angle;
+    headOnly.process(frame);
+  }
+  assert.equal(headOnly.repetitions, 0);
+});
+
+test("plank uses timestamped valid posture, pauses on lost posture, and stops bridging long gaps", () => {
+  const recognizer = new PlankHoldRecognizer();
+  for(let t=1000;t<=5000;t+=100) recognizer.process(plankFrame(t));
+  const beforeBreak = recognizer.validSeconds;
+  recognizer.process(plankFrame(5100,true));
+  for(let t=5200;t<=9000;t+=100) recognizer.process(plankFrame(t));
+  const afterBreak = recognizer.validSeconds;
+  assert.ok(beforeBreak >= 0.7);
+  assert.ok(afterBreak > beforeBreak);
+  assert.ok(afterBreak < 5);
+  const result = recognizer.finish(8);
+  assert.equal(result.validationReady,true);
+  assert.ok(result.invalidSeconds > 0);
+});
+
+test("plank does not credit time across a suspended or stalled camera frame", () => {
+  const recognizer = new PlankHoldRecognizer();
+  recognizer.process(plankFrame(1000));
+  recognizer.process(plankFrame(2000));
+  assert.equal(recognizer.validSeconds,0);
+  const result=recognizer.finish(5);
+  assert.equal(result.validationReady,false);
+});
