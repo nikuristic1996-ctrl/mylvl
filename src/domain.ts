@@ -35,7 +35,7 @@ export type Activity = {
   reps?: number;
   notes?: string;
   xp: number;
-  source: "manual" | "screenshot" | "provider" | "camera";
+  source: "manual" | "screenshot" | "provider" | "camera" | "nose_counter";
   exerciseSession?: {
     sessionId: string; reportedReps: number; detectedReps: number; confidence: number;
     validationMethod: string; recordingDurationSeconds: number; modelVersion: string;
