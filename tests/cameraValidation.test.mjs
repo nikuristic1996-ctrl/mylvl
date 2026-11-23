@@ -129,3 +129,21 @@ test("Phase 6.5 migration supports four workouts, persists plank seconds, and re
   assert.match(phase65Migration, /revoke all on function public\.reserve_camera_exercise_award[\s\S]*from public,anon,authenticated/i);
   assert.doesNotMatch(phase65Migration, /\b(drop\s+table|truncate\s+|delete\s+from)\b/i);
 });
+
+test("camera submission uses the same frame and recording boundaries as the recognizers", () => {
+  for (const exerciseType of ["pushups", "squats", "situps", "plank"]) {
+    const metrics = exerciseType === "plank"
+      ? { metricType: "hold_seconds", reportedHoldSeconds: 1.5, detectedHoldSeconds: 1.5, deviationPercent: 0 }
+      : {};
+    const session = valid({ ...metrics, exerciseType, usableFrames: 12, recordingDurationSeconds: 2 });
+    for (const [frames, seconds, expected] of [
+      [11, 2, false], [12, 2, true], [13, 2, true], [12, 1.99, false], [12, 2.01, true],
+    ]) {
+      assert.equal(
+        parseCameraExerciseSubmission({ ...session, usableFrames: frames, recordingDurationSeconds: seconds }).ok,
+        expected,
+        `${exerciseType}: ${frames} usable frames, ${seconds} seconds`,
+      );
+    }
+  }
+});

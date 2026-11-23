@@ -1,3 +1,8 @@
+import {
+  CAMERA_MAX_RECORDING_SECONDS, CAMERA_MAX_REPETITIONS, CAMERA_MIN_CONFIDENCE, CAMERA_MIN_RECORDING_SECONDS,
+  CAMERA_MIN_USABLE_FRAMES, CAMERA_MIN_USABLE_RATIO, meetsCameraRecordingMinimums,
+} from "../supabase/functions/_shared/cameraValidation.ts";
+
 export type ExerciseKind = "pushups" | "squats" | "situps" | "plank";
 export type RepExerciseKind = Exclude<ExerciseKind, "plank">;
 export type CameraPerspective = "side" | "front" | "diagonal-front";
@@ -36,7 +41,6 @@ const FRONT_PUSHUP_START_BODY_DROP = 0.035;
 const FRONT_PUSHUP_BOTTOM_BODY_DROP = 0.06;
 const FRONT_PUSHUP_CLEAR_BODY_DROP = 0.10;
 const MAX_REP_MS = 12_000;
-const REQUIRED_CONFIDENCE = 0.60;
 
 function visibility(landmark: PoseLandmark | undefined) {
   if (!landmark || !Number.isFinite(landmark.x) || !Number.isFinite(landmark.y)) return 0;
@@ -213,12 +217,17 @@ export class ExerciseRepRecognizer {
     const warnings = [...this.warningCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([warning]) => warning);
     if (this.sawPartial) warnings.push("A partial repetition was not counted.");
     if (this.reps === 0) warnings.push("No complete repetitions were detected. Check your camera angle and repeat the set.");
-    if (usableRatio < 0.65) warnings.push("Too many frames missed the required body landmarks.");
-    if (confidence < REQUIRED_CONFIDENCE) warnings.push("Pose confidence was below the required threshold.");
+    if (usableRatio < CAMERA_MIN_USABLE_RATIO) warnings.push("Too many frames missed the required body landmarks.");
+    if (this.usableFrames < CAMERA_MIN_USABLE_FRAMES) warnings.push("Too few usable frames were captured.");
+    if (recordingDurationSeconds < CAMERA_MIN_RECORDING_SECONDS) warnings.push("Record for at least two seconds.");
+    if (confidence < CAMERA_MIN_CONFIDENCE) warnings.push("Pose confidence was below the required threshold.");
     return {
       repetitions: this.reps, confidence, totalFrames: this.totalFrames, usableFrames: this.usableFrames,
-      usableRatio, durationSeconds: Math.max(0, Math.min(120, recordingDurationSeconds)),
-      partialRep: this.sawPartial, warnings, validationReady: this.reps > 0 && this.totalFrames >= 12 && usableRatio >= 0.65 && confidence >= REQUIRED_CONFIDENCE,
+      usableRatio, durationSeconds: Math.max(0, Math.min(CAMERA_MAX_RECORDING_SECONDS, recordingDurationSeconds)),
+      partialRep: this.sawPartial, warnings,
+      validationReady: this.reps > 0 && this.reps <= CAMERA_MAX_REPETITIONS && meetsCameraRecordingMinimums({
+        usableFrames: this.usableFrames, usableRatio, confidence, recordingDurationSeconds,
+      }),
     };
   }
 
@@ -400,5 +409,5 @@ export class ExerciseRepRecognizer {
 
 export const poseModelVersion = "pose_landmarker_lite_float16_v1";
 export const POSE_RECOGNITION_VERSION = POSE_VERSION;
-export const MIN_POSE_CONFIDENCE = REQUIRED_CONFIDENCE;
+export const MIN_POSE_CONFIDENCE = CAMERA_MIN_CONFIDENCE;
 

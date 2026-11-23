@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { CameraStartup, keepCameraResource } from "./cameraStartup";
 import { Camera, Check, RotateCcw, Shield, X } from "lucide-react";
 import { calculateActivityXp, validateExerciseEstimate } from "./gameEngine";
 import type { Activity, ActivityType } from "./domain";
 import { ExerciseRepRecognizer, type CameraPerspective, type ExerciseKind, type PoseLandmark } from "./poseRecognition";
-import { PlankHoldRecognizer, type PlankAnalysis } from "./plankRecognition";
+import { MAX_PLANK_SAMPLE_GAP_MS, PlankHoldRecognizer, type PlankAnalysis } from "./plankRecognition";
 import { CAMERA_RECORDING_LIMIT_SECONDS, loadPoseRuntime, stopCameraTracks, type PoseRuntime } from "./poseRuntime";
 
 const EXERCISES: { kind: ExerciseKind; label: string }[] = [
@@ -51,6 +52,10 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const runtimeRef = useRef<PoseRuntime | null>(null);
+  const [cameraStartup] = useState(() => new CameraStartup());
+  const [startingCamera, setStartingCamera] = useState(false);
+  const lastPlankVideoTimeRef = useRef(-1);
+  const lastPlankSampleAtRef = useRef(0);
   const recognizerRef = useRef<ExerciseRepRecognizer | null>(null);
   const plankRecognizerRef = useRef<PlankHoldRecognizer | null>(null);
   const rafRef = useRef(0);
@@ -80,12 +85,16 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const [cameraEpoch, setCameraEpoch] = useState(0);
   stageRef.current = stage;
 
-  function cleanup() {
+  function releaseCamera() {
     runningRef.current = false;
     cancelAnimationFrame(rafRef.current);
     runtimeRef.current?.close(); runtimeRef.current = null;
     stopCameraTracks(streamRef.current); streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+  }
+  function cleanup() {
+    cameraStartup.cancel();
+    releaseCamera();
   }
   useEffect(() => () => cleanup(), []);
   useEffect(() => {
@@ -113,6 +122,9 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     if (countdown <= 0) {
       recognizerRef.current = exercise === "plank" ? null : new ExerciseRepRecognizer(exercise, perspective);
       plankRecognizerRef.current = exercise === "plank" ? new PlankHoldRecognizer() : null;
+      lastPlankVideoTimeRef.current = -1;
+      lastPlankSampleAtRef.current = 0;
+      lastShownSecondRef.current = -1;
       setLivePlankValid(false);
       setRepStatus(exercise === "plank" ? "Hold the plank position steadily." : "Start in the ready position, then complete the movement.");
       startRef.current = performance.now(); lastInferenceRef.current = 0;
@@ -135,19 +147,29 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
       if (now - lastInferenceRef.current >= 66 && videoRef.current && runtimeRef.current) {
         lastInferenceRef.current = now;
         try {
-          const landmarks = runtimeRef.current.detect(videoRef.current, now);
-          const visible = hasVisibleBody(landmarks, exercise, perspective);
-          if (visible !== lastPositionRef.current) { lastPositionRef.current = visible; setPositionReady(visible); }
-          if (landmarks && stage === "recording") {
-            const frame = { landmarks, width: videoRef.current.videoWidth, height: videoRef.current.videoHeight, timestampMs: now };
-            if (exercise === "plank") {
-              const result = plankRecognizerRef.current?.process(frame);
-              if (result) setLivePlankValid(result.valid);
-            } else {
-              const result = recognizerRef.current?.process(frame);
-              if (result) {
-                const status = result.warning ? `Adjust: ${result.warning}` : `Tracking movement: ${result.phase}.`;
-                setRepStatus((previous) => previous === status ? previous : status);
+          const video = videoRef.current;
+          const plank = stage === "recording" ? plankRecognizerRef.current : null;
+          const repeatedPlankFrame = plank && video.currentTime === lastPlankVideoTimeRef.current;
+          if (repeatedPlankFrame) {
+            if (now - lastPlankSampleAtRef.current > MAX_PLANK_SAMPLE_GAP_MS) {
+              setLivePlankValid(plank.missingFrame().valid);
+            }
+          } else {
+            const landmarks = runtimeRef.current.detect(video, now);
+            const visible = hasVisibleBody(landmarks, exercise, perspective);
+            if (visible !== lastPositionRef.current) { lastPositionRef.current = visible; setPositionReady(visible); }
+            if (stage === "recording") {
+              const frame = landmarks ? { landmarks, width: video.videoWidth, height: video.videoHeight, timestampMs: now } : null;
+              if (plank) {
+                lastPlankVideoTimeRef.current = video.currentTime;
+                lastPlankSampleAtRef.current = now;
+                setLivePlankValid((frame ? plank.process(frame) : plank.missingFrame()).valid);
+              } else if (frame) {
+                const result = recognizerRef.current?.process(frame);
+                if (result) {
+                  const status = result.warning ? `Adjust: ${result.warning}` : `Tracking movement: ${result.phase}.`;
+                  setRepStatus((previous) => previous === status ? previous : status);
+                }
               }
             }
           }
@@ -161,27 +183,57 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   }, [stage, cameraEpoch, cameraLive]);
 
   async function startCamera() {
-    setError(""); setStage("setup"); setRuntimeStatus("Loading camera and pose model…");
-    lastPositionRef.current = false; setPositionReady(false);
-    cleanup();
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support camera access.");
-      if (!window.isSecureContext) throw new Error("Camera access requires HTTPS.");
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 30 } }, audio: false });
-      streamRef.current = stream;
-      stream.getVideoTracks().forEach((track) => track.addEventListener("ended", () => {
-        if (stageRef.current === "recording" || stageRef.current === "countdown") {
-          runningRef.current = false; setAnalysis(null); setError("The camera was interrupted. This session was discarded without EXP.");
-          cleanup(); setCameraLive(false); setStage("error");
+    const started = await cameraStartup.run(async (signal) => {
+      setStartingCamera(true);
+      setError("");
+      setStage("setup");
+      setRuntimeStatus("Loading camera and pose model…");
+      lastPositionRef.current = false;
+      setPositionReady(false);
+      releaseCamera();
+      setCameraLive(false);
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support camera access.");
+        if (!window.isSecureContext) throw new Error("Camera access requires HTTPS.");
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 30 } }, audio: false });
+        if (!keepCameraResource(stream, signal, stopCameraTracks)) return;
+        streamRef.current = stream;
+        stream.getVideoTracks().forEach((track) => track.addEventListener("ended", () => {
+          if (streamRef.current !== stream) return;
+          setAnalysis(null);
+          setPlankAnalysis(null);
+          setError("The camera was interrupted. This session was discarded without EXP.");
+          cleanup();
+          setCameraLive(false);
+          setStage("error");
+        }, { once: true }));
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play();
         }
-      }, { once: true }));
-      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
-      setCameraLive(true);
-      const runtime = await loadPoseRuntime((state) => setRuntimeStatus(state === "ready" ? "Ready" : state === "error" ? "Could not load" : "Loading pose model…"));
-      runtimeRef.current = runtime; setCameraEpoch((value) => value + 1);
-    } catch (cause) {
-      setError(cameraErrorMessage(cause)); setRuntimeStatus("Error"); setStage("error");
-      cleanup(); setCameraLive(false);
+        if (signal.aborted) return;
+        setCameraLive(true);
+        const runtime = await loadPoseRuntime((state) => {
+          if (!signal.aborted) setRuntimeStatus(state === "ready" ? "Ready" : state === "error" ? "Could not load" : "Loading pose model…");
+        });
+        if (!keepCameraResource(runtime, signal, (resource) => resource.close())) return;
+        runtimeRef.current = runtime;
+        setCameraEpoch((value) => value + 1);
+      } catch (cause) {
+        if (signal.aborted) return;
+        setError(cameraErrorMessage(cause));
+        setRuntimeStatus("Error");
+        setStage("error");
+        releaseCamera();
+        setCameraLive(false);
+      } finally {
+        setStartingCamera(false);
+      }
+    });
+    if (!started && !startingCamera) {
+      setError("A previous camera request is still finishing. Wait for it to close, then retry.");
+      setStage("error");
     }
   }
 
@@ -212,7 +264,8 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     const confidence = exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence;
     const ready = exercise === "plank" ? plankAnalysis?.validationReady && (detectedAmount ?? 0) > 0 : Boolean(analysis?.validationReady);
     if (!Number.isFinite(userCount) || userCount <= 0 || detectedAmount === undefined || confidence === undefined || !ready) {
-      setError(exercise === "plank" ? "Some clearly tracked plank time is needed before validation." : "The camera did not collect enough clear movement data. Please retry.");
+      const warnings = exercise === "plank" ? plankAnalysis?.warnings : analysis?.warnings;
+      setError(warnings?.length ? warnings.join(" ") : "The camera did not collect enough clear movement data. Please retry.");
       return;
     }
     if (exercise !== "plank" && !Number.isSafeInteger(userCount)) return;
@@ -283,12 +336,12 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     <div className="camera-note"><Shield size={16}/><span>Local recognition is a helpful estimate, not tamper-proof proof or professional form assessment. Maximum analysis time: 90 seconds. Performance metrics may be provided by the model host; video frames stay on your device.</span></div>
     {stage === "recording" && <div className="camera-recording-guidance" role="status" aria-live="polite"><strong>Live analysis active</strong><span>{exercise === "plank" ? (livePlankValid ? "Plank posture is being tracked." : "Adjust to the side-view guide and hold a steady plank.") : repStatus} Detected totals stay hidden until you enter your estimate. Finish the set to compare and confirm; nothing is saved yet.</span></div>}
     <div className={`camera-controls ${stage === "recording" ? "is-recording" : ""}`}>
-      {stage === "setup" && <><label>Camera<select value={facing} onChange={(e) => setFacing(e.target.value as "user"|"environment")}><option value="environment">Rear camera</option><option value="user">Front camera</option></select></label><button className="primary-button" onClick={() => void startCamera()}>{cameraLive ? "Reload camera" : "Enable camera"}</button>{cameraLive && runtimeRef.current && <button className="primary-button" onClick={() => { setError(""); setCountdown(3); setStage("countdown"); }}>Start · 3-second countdown</button>}</>}
+      {stage === "setup" && <><label>Camera<select value={facing} onChange={(e) => setFacing(e.target.value as "user"|"environment")}><option value="environment">Rear camera</option><option value="user">Front camera</option></select></label><button className="primary-button" disabled={startingCamera} onClick={() => void startCamera()}>{startingCamera ? "Starting camera…" : cameraLive ? "Reload camera" : "Enable camera"}</button>{!startingCamera && cameraLive && runtimeRef.current && <button className="primary-button" onClick={() => { setError(""); setCountdown(3); setStage("countdown"); }}>Start · 3-second countdown</button>}</>}
       {stage === "countdown" && <button className="secondary-button" onClick={() => setStage("setup")}>Cancel countdown</button>}
       {stage === "recording" && <><span>Pose engine: {runtimeStatus} · no video file is created</span><button className="primary-button" onClick={stopSession}>Finish set &amp; analyze</button><button className="secondary-button" onClick={() => { runningRef.current = false; cleanup(); setCameraLive(false); setAnalysis(null); setStage("setup"); }}>Cancel session</button></>}
       {stage === "report" && <><label className="field-label">{exercise === "plank" ? "How many seconds did you hold the plank? Enter your estimate before seeing the detected duration." : "How many repetitions did you complete? Enter your estimate before seeing the detected result."}<input type="number" min={exercise === "plank" ? "0.1" : "1"} max={exercise === "plank" ? "90" : "500"} step={exercise === "plank" ? "0.1" : "1"} inputMode="decimal" value={reported} onChange={(e) => { setReported(e.target.value); setError(""); }} /></label>{error && <div className="camera-warning" role="alert">{error}</div>}<button className="primary-button" disabled={!Number.isFinite(Number(reported)) || Number(reported) <= 0 || Number(reported) > (exercise === "plank" ? 90 : 500) || (exercise !== "plank" && !Number.isSafeInteger(Number(reported)))} onClick={validate}>Compare and validate</button><button className="secondary-button" onClick={() => void retry()}><RotateCcw size={15}/> Retry recording</button></>}
       {stage === "result" && <><div className="camera-result"><b>{exercise === "plank" ? `Detected valid hold ${(plankAnalysis?.validSeconds ?? 0).toFixed(1)} s` : `Detected ${analysis?.repetitions ?? 0} repetitions`} · You reported {reported}{exercise === "plank" ? " s" : ""}</b><span>Pose confidence {Math.round(((exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence) ?? 0) * 100)}% · usable frames {exercise === "plank" ? plankAnalysis?.usableFrames : analysis?.usableFrames}/{exercise === "plank" ? plankAnalysis?.totalFrames : analysis?.totalFrames}</span><span className={comparison?.status === "accepted" ? "camera-success" : "camera-warning"}>{comparison?.status === "accepted" ? `Validated · ${comparison.deviationPercent?.toFixed(1)}% difference` : `Not validated · ${comparison?.status}${comparison?.deviationPercent == null ? "" : ` · ${comparison.deviationPercent.toFixed(1)}% difference`}`}</span>{(exercise === "plank" ? plankAnalysis?.warnings : analysis?.warnings)?.map((warning) => <small key={warning}>{warning}</small>)}{exercise === "plank" && plankAnalysis && <small>Unvalidated time: {plankAnalysis.invalidSeconds.toFixed(1)} s. Only validated hold time contributes to EXP.</small>}</div>{comparison?.status === "accepted" ? <><div className="camera-result"><b>Estimated reward: {expPreview} EXP</b><span>Server recalculates this using the existing activity rates and daily limits.</span></div><button className="primary-button" disabled={busy || expPreview <= 0} onClick={() => void confirmActivity()}><Check size={16}/> {busy ? "Saving…" : "Confirm activity"}</button></> : <p className="camera-warning">No EXP is awarded. Retry with a clear camera view and a complete movement cycle.</p>}<button className="secondary-button" onClick={() => void retry()}><RotateCcw size={15}/> Retry</button></>}
-      {stage === "error" && <><div className="camera-warning" role="alert">{error}</div><button className="primary-button" onClick={() => void startCamera()}>Retry camera</button></>}
+      {stage === "error" && <><div className="camera-warning" role="alert">{error}</div><button className="primary-button" disabled={startingCamera} onClick={() => void startCamera()}>Retry camera</button></>}
     </div>
     <small className="camera-runtime">Pose runtime: {runtimeStatus}{cameraEpoch ? " · MediaPipe Pose Landmarker Lite" : ""}{error && stage !== "error" ? ` · ${error}` : ""}</small>
     <p className="camera-limits">Supported camera workouts: push-ups, bodyweight squats, sit-ups and forearm planks. Pull-ups remain available through the general activity flow. Exercise variations and form quality are not assessed. Leaving the screen stops the camera and releases resources.</p>

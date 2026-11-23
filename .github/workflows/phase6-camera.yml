@@ -73,3 +73,51 @@ jobs:
           name: phase6-generated-lockfile
           path: package-lock.json
           if-no-files-found: ignore
+
+  integration:
+    name: Supabase integration (disposable stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --package-lock-only --ignore-scripts
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.58.5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Start isolated Supabase and run existing integration tests
+        env:
+          PHASE2_INTEGRATION: '1'
+        run: |
+          stack="$RUNNER_TEMP/mylvl-integration"
+          mkdir -p "$stack/supabase"
+          cp supabase/config.toml "$stack/supabase/"
+          trap 'supabase stop --workdir "$stack" --no-backup' EXIT
+
+          supabase start --workdir "$stack" -x studio,imgproxy,inbucket,logflare,vector,edge-runtime
+          # The historic migration revokes this hosted helper. The app schema enables RLS explicitly.
+          psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 \
+            -c 'create function public.rls_auto_enable() returns event_trigger language plpgsql as $fixture$ begin end; $fixture$' \
+            -f supabase/schema.sql \
+            -f supabase/migrations/20261113011810_phase_2_secure_progression.sql \
+            -f supabase/migrations/20261113150000_screenshot_duplicate_guard.sql
+
+          eval "$(supabase status --workdir "$stack" -o env)"
+          export SUPABASE_URL="$API_URL" SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+          # Serve the repository handler directly so the local gateway cannot override its CORS headers.
+          deno run --allow-env --allow-net supabase/functions/award-activity/index.ts > "$RUNNER_TEMP/mylvl-award.log" 2>&1 &
+          edge_pid=$!
+          trap 'kill "$edge_pid" 2>/dev/null || true; supabase stop --workdir "$stack" --no-backup' EXIT
+          export AWARD_FUNCTION_URL="http://127.0.0.1:8000/"
+          if ! curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 \
+            -X OPTIONS -H 'Origin: http://localhost:5173' "$AWARD_FUNCTION_URL"; then
+            cat "$RUNNER_TEMP/mylvl-award.log"
+            exit 1
+          fi
+          npm run test:integration || { cat "$RUNNER_TEMP/mylvl-award.log"; exit 1; }

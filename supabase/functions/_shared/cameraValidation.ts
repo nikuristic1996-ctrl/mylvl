@@ -23,6 +23,9 @@ export type CameraExerciseSubmission = {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const CAMERA_MAX_RECORDING_SECONDS = 90;
 export const CAMERA_MIN_CONFIDENCE = 0.60;
+export const CAMERA_MIN_USABLE_FRAMES = 12;
+export const CAMERA_MIN_USABLE_RATIO = 0.65;
+export const CAMERA_MIN_RECORDING_SECONDS = 2;
 export const CAMERA_MAX_REPETITIONS = 500;
 export const CAMERA_MAX_DEVIATION_PERCENT = 10;
 export const CAMERA_MODEL_VERSION = "pose_landmarker_lite_float16_v1";
@@ -40,6 +43,20 @@ export function compareCameraEstimate(input: {
     maximumDeviationPercent: CAMERA_MAX_DEVIATION_PERCENT,
   };
   return validateExerciseEstimate(validation);
+}
+
+export function meetsCameraRecordingMinimums(recording: {
+  usableFrames: number;
+  usableRatio: number;
+  confidence: number;
+  recordingDurationSeconds: number;
+}): boolean {
+  const { usableFrames, usableRatio, confidence, recordingDurationSeconds } = recording;
+  return Number.isSafeInteger(usableFrames) && usableFrames >= CAMERA_MIN_USABLE_FRAMES
+    && Number.isFinite(usableRatio) && usableRatio >= CAMERA_MIN_USABLE_RATIO && usableRatio <= 1
+    && Number.isFinite(confidence) && confidence >= CAMERA_MIN_CONFIDENCE && confidence <= 1
+    && Number.isFinite(recordingDurationSeconds) && recordingDurationSeconds >= CAMERA_MIN_RECORDING_SECONDS
+    && recordingDurationSeconds <= CAMERA_MAX_RECORDING_SECONDS;
 }
 
 /** Validates the user estimate while preserving the detected value as the only award metric. */
@@ -72,12 +89,10 @@ export function parseCameraExerciseSubmission(input: unknown, expectedType?: Cam
   const amountIsValid = exerciseType === "plank"
     ? Number.isFinite(reportedAmount) && Number.isFinite(detectedAmount) && reportedAmount > 0 && detectedAmount > 0 && reportedAmount <= CAMERA_MAX_RECORDING_SECONDS && detectedAmount <= CAMERA_MAX_RECORDING_SECONDS
     : Number.isSafeInteger(reportedAmount) && Number.isSafeInteger(detectedAmount) && reportedAmount >= 1 && detectedAmount >= 1 && reportedAmount <= CAMERA_MAX_REPETITIONS && detectedAmount <= CAMERA_MAX_REPETITIONS;
-  if (!amountIsValid || !Number.isSafeInteger(value.usableFrames) || value.usableFrames < 12) {
+  if (!amountIsValid || !Number.isSafeInteger(value.usableFrames) || value.usableFrames < CAMERA_MIN_USABLE_FRAMES) {
     return { ok: false, error: "The reported and detected values must be valid and enough usable frames are required." };
   }
-  if (!Number.isFinite(value.confidence) || value.confidence < CAMERA_MIN_CONFIDENCE || value.confidence > 1
-    || !Number.isFinite(value.usableRatio) || value.usableRatio < 0.65 || value.usableRatio > 1
-    || !Number.isFinite(value.recordingDurationSeconds) || value.recordingDurationSeconds < 2 || value.recordingDurationSeconds > CAMERA_MAX_RECORDING_SECONDS) {
+  if (!meetsCameraRecordingMinimums(value)) {
     return { ok: false, error: "Camera confidence, usable frames, or recording duration did not meet the required limits." };
   }
   if (value.modelVersion !== CAMERA_MODEL_VERSION || value.validationVersion !== CAMERA_VALIDATION_VERSION) {

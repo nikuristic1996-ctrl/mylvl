@@ -225,3 +225,67 @@ test("plank does not credit time across a suspended or stalled camera frame", ()
   const result=recognizer.finish(5);
   assert.equal(result.validationReady,false);
 });
+
+test("plank breaks immediately on missing or low-confidence poses and credits only fresh intervals", () => {
+  const recognizer = new PlankHoldRecognizer();
+  recognizer.process(plankFrame(1000));
+  assert.equal(recognizer.process(plankFrame(1100)).validSeconds, 0.1);
+  assert.equal(recognizer.missingFrame().valid, false);
+  assert.equal(recognizer.process(plankFrame(1200)).validSeconds, 0.1);
+  assert.equal(recognizer.process(plankFrame(1300, false, 0.4)).valid, false);
+  assert.equal(recognizer.process(plankFrame(1350)).validSeconds, 0.1);
+  assert.equal(recognizer.process(plankFrame(1450)).validSeconds, 0.2);
+  assert.equal(recognizer.process(plankFrame(1450)).valid, false);
+  assert.equal(recognizer.process(plankFrame(1500)).validSeconds, 0.2);
+  assert.equal(recognizer.process(plankFrame(1701)).validSeconds, 0.2);
+});
+
+test("plank rejects upright alignment and tolerates moderate tilt with either side visible", () => {
+  function tiltedFrame(time, degrees) {
+    const frame = plankFrame(time);
+    const angle = degrees * Math.PI / 180;
+    for (const point of frame.landmarks) {
+      const x = (point.x - 0.5) * frame.width;
+      const y = (point.y - 0.5) * frame.height;
+      point.x = 0.5 + (x * Math.cos(angle) - y * Math.sin(angle)) / frame.width;
+      point.y = 0.5 + (x * Math.sin(angle) + y * Math.cos(angle)) / frame.height;
+    }
+    return frame;
+  }
+  const recognizer = new PlankHoldRecognizer();
+  assert.equal(recognizer.process(tiltedFrame(1000, 90)).valid, false);
+  assert.equal(recognizer.process(tiltedFrame(1100, 15)).valid, true);
+  const rightSide = tiltedFrame(1200, -15);
+  for (const index of [11, 13, 15, 23, 25, 27]) rightSide.landmarks[index].visibility = 0.2;
+  assert.equal(recognizer.process(rightSide).validSeconds, 0.1);
+});
+
+test("repetition and plank readiness both require twelve usable frames and two seconds", () => {
+  const reps = new ExerciseRepRecognizer("squats");
+  const plank = new PlankHoldRecognizer();
+  function addFrame(index) {
+    const angle = [170, 170, 170, 135, 110, 80, 80, 110, 140, 165, 170, 170, 170][index];
+    const time = 1000 + index * 180;
+    reps.process(frameFor("squats", angle, time));
+    plank.process(plankFrame(time));
+  }
+  for (let i = 0; i < 11; i++) addFrame(i);
+  reps.process({ ...frameFor("squats", 170, 2900), landmarks: [] });
+  plank.missingFrame();
+  for (const recognizer of [reps, plank]) {
+    const result = recognizer.finish(2);
+    assert.equal(result.totalFrames, 12);
+    assert.equal(result.usableFrames, 11);
+    assert.equal(result.validationReady, false);
+  }
+  addFrame(11);
+  for (const recognizer of [reps, plank]) {
+    assert.equal(recognizer.finish(1.99).validationReady, false);
+    assert.equal(recognizer.finish(2).validationReady, true);
+    assert.equal(recognizer.finish(2.01).validationReady, true);
+  }
+  addFrame(12);
+  for (const recognizer of [reps, plank]) {
+    assert.equal(recognizer.finish(2.01).validationReady, true);
+  }
+});
