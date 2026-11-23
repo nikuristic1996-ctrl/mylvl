@@ -24,9 +24,9 @@ begin
 
   situp_one := public.reserve_camera_exercise_award(
     '11111111-1111-4111-8111-111111111111',
-    '66666666-6666-4666-8666-666666666666',
+    'a1111111-1111-4111-8111-111111111111',
     jsonb_build_object(
-      'activity_type','situps','source','camera','source_key','66666666-6666-4666-8666-666666666666',
+      'activity_type','situps','source','camera','source_key','a1111111-1111-4111-8111-111111111111',
       'activity_date',now()::text,
       'exercise_validation',jsonb_build_object(
         'exerciseType','situps','metricType','repetitions','reportedReps',20,'detectedReps',19,
@@ -37,9 +37,9 @@ begin
   );
   situp_duplicate := public.reserve_camera_exercise_award(
     '11111111-1111-4111-8111-111111111111',
-    '66666666-6666-4666-8666-666666666666',
+    'a1111111-1111-4111-8111-111111111111',
     jsonb_build_object(
-      'activity_type','situps','source','camera','source_key','66666666-6666-4666-8666-666666666666',
+      'activity_type','situps','source','camera','source_key','a1111111-1111-4111-8111-111111111111',
       'activity_date',now()::text,
       'exercise_validation',jsonb_build_object(
         'exerciseType','situps','metricType','repetitions','reportedReps',20,'detectedReps',19,
@@ -59,9 +59,9 @@ begin
 
   plank_one := public.reserve_camera_exercise_award(
     '11111111-1111-4111-8111-111111111111',
-    '77777777-7777-4777-8777-777777777777',
+    'b2222222-2222-4222-8222-222222222222',
     jsonb_build_object(
-      'activity_type','plank','source','camera','source_key','77777777-7777-4777-8777-777777777777',
+      'activity_type','plank','source','camera','source_key','b2222222-2222-4222-8222-222222222222',
       'activity_date',now()::text,
       'exercise_validation',jsonb_build_object(
         'exerciseType','plank','metricType','hold_seconds','reportedHoldSeconds',30,'detectedHoldSeconds',29,
@@ -72,9 +72,9 @@ begin
   );
   plank_duplicate := public.reserve_camera_exercise_award(
     '11111111-1111-4111-8111-111111111111',
-    '77777777-7777-4777-8777-777777777777',
+    'b2222222-2222-4222-8222-222222222222',
     jsonb_build_object(
-      'activity_type','plank','source','camera','source_key','77777777-7777-4777-8777-777777777777',
+      'activity_type','plank','source','camera','source_key','b2222222-2222-4222-8222-222222222222',
       'activity_date',now()::text,
       'exercise_validation',jsonb_build_object(
         'exerciseType','plank','metricType','hold_seconds','reportedHoldSeconds',30,'detectedHoldSeconds',29,
@@ -95,9 +95,9 @@ begin
   begin
     perform public.reserve_camera_exercise_award(
       '11111111-1111-4111-8111-111111111111',
-      '88888888-8888-4888-8888-888888888888',
+      'c3333333-3333-4333-8333-333333333333',
       jsonb_build_object(
-        'activity_type','situps','source','camera','source_key','88888888-8888-4888-8888-888888888888',
+        'activity_type','situps','source','camera','source_key','c3333333-3333-4333-8333-333333333333',
         'activity_date',now()::text,
         'exercise_validation',jsonb_build_object(
           'exerciseType','situps','reportedReps',20,'detectedReps',15,'confidence',0.95,
