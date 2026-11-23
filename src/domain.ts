@@ -33,12 +33,14 @@ export type Activity = {
   steps?: number;
   calories?: number;
   reps?: number;
+  holdSeconds?: number;
   notes?: string;
   xp: number;
   source: "manual" | "screenshot" | "provider" | "camera" | "nose_counter";
   exerciseSession?: {
-    sessionId: string; reportedReps: number; detectedReps: number; confidence: number;
-    validationMethod: string; recordingDurationSeconds: number; modelVersion: string;
+    sessionId: string; exerciseType: "pushups" | "squats" | "situps" | "plank"; metricType: "repetitions" | "hold_seconds";
+    reportedReps?: number; detectedReps?: number; reportedHoldSeconds?: number; detectedHoldSeconds?: number;
+    confidence: number; validationMethod: string; recordingDurationSeconds: number; modelVersion: string;
     validationVersion: string; cameraPerspective?: "side" | "front" | "diagonal-front"; usableFrames: number; usableRatio: number; deviationPercent: number | null;
   };
   sourceKey?: string;
