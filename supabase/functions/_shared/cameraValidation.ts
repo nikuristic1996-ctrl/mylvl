@@ -70,7 +70,7 @@ export function parseCameraExerciseSubmission(input: unknown, expectedType?: Cam
   };
   if (!UUID_PATTERN.test(value.sessionId)) return { ok: false, error: "Camera session ID must be a valid UUID." };
   const amountIsValid = exerciseType === "plank"
-    ? Number.isFinite(reportedAmount) && Number.isFinite(detectedAmount) && reportedAmount >= 10 && detectedAmount >= 10 && reportedAmount <= CAMERA_MAX_RECORDING_SECONDS && detectedAmount <= CAMERA_MAX_RECORDING_SECONDS
+    ? Number.isFinite(reportedAmount) && Number.isFinite(detectedAmount) && reportedAmount > 0 && detectedAmount > 0 && reportedAmount <= CAMERA_MAX_RECORDING_SECONDS && detectedAmount <= CAMERA_MAX_RECORDING_SECONDS
     : Number.isSafeInteger(reportedAmount) && Number.isSafeInteger(detectedAmount) && reportedAmount >= 1 && detectedAmount >= 1 && reportedAmount <= CAMERA_MAX_REPETITIONS && detectedAmount <= CAMERA_MAX_REPETITIONS;
   if (!amountIsValid || !Number.isSafeInteger(value.usableFrames) || value.usableFrames < 12) {
     return { ok: false, error: "The reported and detected values must be valid and enough usable frames are required." };
