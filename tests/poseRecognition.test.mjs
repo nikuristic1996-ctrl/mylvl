@@ -38,6 +38,14 @@ function frontPushupFrame(angle, timestampMs, bodyShift = angle < 150 ? Math.min
   return { landmarks: points, width: 640, height: 480, timestampMs };
 }
 
+function anchoredFrontPushupFrame(timestampMs, noseShift, shoulderShift) {
+  const frame = frontPushupFrame(130, timestampMs, 0);
+  frame.landmarks[0].y += noseShift;
+  frame.landmarks[11].y += shoulderShift;
+  frame.landmarks[12].y += shoulderShift;
+  return frame;
+}
+
 test("joint angles are stable around straight and bent joints", () => {
   assert.equal(Math.round(jointAngle({x:0,y:0},{x:1,y:0},{x:2,y:0})), 180);
   assert.equal(Math.round(jointAngle({x:0,y:0},{x:1,y:0},{x:1,y:1})), 90);
@@ -142,6 +150,21 @@ test("front push-ups: counts a brisk cycle from only top, bottom and top samples
   const recognizer = new ExerciseRepRecognizer("pushups", "front");
   [0, 0.055, 0].forEach((shift, index) =>
     recognizer.process(frontPushupFrame(130, 7000 + index * 100, shift)));
+  assert.equal(recognizer.repetitions, 1);
+});
+
+
+test("front push-ups: follows the head anchor when it moves more clearly than the shoulders", () => {
+  const recognizer = new ExerciseRepRecognizer("pushups", "front");
+  [[0, 0], [0.055, 0], [0, 0]].forEach(([nose, shoulders], index) =>
+    recognizer.process(anchoredFrontPushupFrame(9000 + index * 100, nose, shoulders)));
+  assert.equal(recognizer.repetitions, 1);
+});
+
+test("front push-ups: follows the shoulder anchor when it moves more clearly than the head", () => {
+  const recognizer = new ExerciseRepRecognizer("pushups", "front");
+  [[0, 0], [0, 0.055], [0, 0]].forEach(([nose, shoulders], index) =>
+    recognizer.process(anchoredFrontPushupFrame(10000 + index * 100, nose, shoulders)));
   assert.equal(recognizer.repetitions, 1);
 });
 
