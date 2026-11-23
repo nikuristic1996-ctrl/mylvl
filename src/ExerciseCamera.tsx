@@ -3,11 +3,14 @@ import { Camera, Check, RotateCcw, Shield, X } from "lucide-react";
 import { calculateActivityXp, validateExerciseEstimate } from "./gameEngine";
 import type { Activity, ActivityType } from "./domain";
 import { ExerciseRepRecognizer, type CameraPerspective, type ExerciseKind, type PoseLandmark } from "./poseRecognition";
+import { PlankHoldRecognizer, type PlankAnalysis } from "./plankRecognition";
 import { CAMERA_RECORDING_LIMIT_SECONDS, loadPoseRuntime, stopCameraTracks, type PoseRuntime } from "./poseRuntime";
 
 const EXERCISES: { kind: ExerciseKind; label: string }[] = [
   { kind: "pushups", label: "Push-ups" },
   { kind: "squats", label: "Squats" },
+  { kind: "situps", label: "Sit-ups" },
+  { kind: "plank", label: "Plank" },
 ];
 const MIN_VISIBILITY = 0.55;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -49,11 +52,11 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const streamRef = useRef<MediaStream | null>(null);
   const runtimeRef = useRef<PoseRuntime | null>(null);
   const recognizerRef = useRef<ExerciseRepRecognizer | null>(null);
+  const plankRecognizerRef = useRef<PlankHoldRecognizer | null>(null);
   const rafRef = useRef(0);
   const lastInferenceRef = useRef(0);
   const lastShownSecondRef = useRef(-1);
   const lastPositionRef = useRef(false);
-  const liveRepsRef = useRef(0);
   const startRef = useRef(0);
   const runningRef = useRef(false);
   const stageRef = useRef<Stage>("setup");
@@ -66,10 +69,11 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   const [cameraLive, setCameraLive] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const [elapsed, setElapsed] = useState(0);
-  const [liveReps, setLiveReps] = useState(0);
+  const [livePlankValid, setLivePlankValid] = useState(false);
   const [repStatus, setRepStatus] = useState("Waiting for a clear arm cycle.");
   const [reported, setReported] = useState("");
   const [analysis, setAnalysis] = useState<ReturnType<ExerciseRepRecognizer["finish"]> | null>(null);
+  const [plankAnalysis, setPlankAnalysis] = useState<PlankAnalysis | null>(null);
   const [comparison, setComparison] = useState<ReturnType<typeof validateExerciseEstimate> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -107,8 +111,10 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
   useEffect(() => {
     if (stage !== "countdown") return;
     if (countdown <= 0) {
-      recognizerRef.current = new ExerciseRepRecognizer(exercise, perspective);
-      liveRepsRef.current = 0; setLiveReps(0); setRepStatus("Start with arms extended, then lower and push back up.");
+      recognizerRef.current = exercise === "plank" ? null : new ExerciseRepRecognizer(exercise, perspective);
+      plankRecognizerRef.current = exercise === "plank" ? new PlankHoldRecognizer() : null;
+      setLivePlankValid(false);
+      setRepStatus(exercise === "plank" ? "Hold the plank position steadily." : "Start in the ready position, then complete the movement.");
       startRef.current = performance.now(); lastInferenceRef.current = 0;
       runningRef.current = true; setStage("recording"); return;
     }
@@ -133,14 +139,16 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
           const visible = hasVisibleBody(landmarks, exercise, perspective);
           if (visible !== lastPositionRef.current) { lastPositionRef.current = visible; setPositionReady(visible); }
           if (landmarks && stage === "recording") {
-            const result = recognizerRef.current?.process({ landmarks, width: videoRef.current.videoWidth, height: videoRef.current.videoHeight, timestampMs: now });
-            if (result) {
-              if (result.repetitions !== liveRepsRef.current) {
-                liveRepsRef.current = result.repetitions;
-                setLiveReps(result.repetitions);
+            const frame = { landmarks, width: videoRef.current.videoWidth, height: videoRef.current.videoHeight, timestampMs: now };
+            if (exercise === "plank") {
+              const result = plankRecognizerRef.current?.process(frame);
+              if (result) setLivePlankValid(result.valid);
+            } else {
+              const result = recognizerRef.current?.process(frame);
+              if (result) {
+                const status = result.warning ? `Adjust: ${result.warning}` : `Tracking movement: ${result.phase}.`;
+                setRepStatus((previous) => previous === status ? previous : status);
               }
-              const status = result.warning ? `Adjust: ${result.warning}` : `Tracking arm movement: ${result.phase}.`;
-              setRepStatus((previous) => previous === status ? previous : status);
             }
           }
         } catch (cause) { setError(cameraErrorMessage(cause)); stopSession(); setStage("error"); }
@@ -182,53 +190,79 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
     runningRef.current = false; cancelAnimationFrame(rafRef.current);
     const seconds = Math.min(CAMERA_RECORDING_LIMIT_SECONDS, (performance.now() - startRef.current) / 1000);
     setElapsed(Math.floor(seconds));
-    const result = recognizerRef.current?.finish(seconds) ?? null;
-    setAnalysis(result); setComparison(null); setReported("");
+    if (exercise === "plank") {
+      setPlankAnalysis(plankRecognizerRef.current?.finish(seconds) ?? null);
+      setAnalysis(null);
+    } else {
+      setAnalysis(recognizerRef.current?.finish(seconds) ?? null);
+      setPlankAnalysis(null);
+    }
+    setComparison(null); setReported("");
     cleanup(); setCameraLive(false); setStage("report");
   }
 
   async function retry() {
-    cleanup(); setCameraLive(false); setAnalysis(null); setComparison(null); setElapsed(0); setReported("");
+    cleanup(); setCameraLive(false); setAnalysis(null); setPlankAnalysis(null); setComparison(null); setElapsed(0); setReported("");
     setStage("setup"); await startCamera();
   }
 
   function validate() {
     const userCount = Number(reported);
-    if (!Number.isSafeInteger(userCount) || userCount <= 0 || !analysis) return;
-    const result = validateExerciseEstimate({ detectedAmount: analysis.repetitions, userEstimate: userCount, confidence: analysis.confidence, minimumConfidence: 0.60 });
+    const detectedAmount = exercise === "plank" ? plankAnalysis?.validSeconds : analysis?.repetitions;
+    const confidence = exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence;
+    const ready = exercise === "plank" ? plankAnalysis?.validationReady && (detectedAmount ?? 0) > 0 : Boolean(analysis?.validationReady);
+    if (!Number.isFinite(userCount) || userCount <= 0 || detectedAmount === undefined || confidence === undefined || !ready) {
+      setError(exercise === "plank" ? "Some clearly tracked plank time is needed before validation." : "The camera did not collect enough clear movement data. Please retry.");
+      return;
+    }
+    if (exercise !== "plank" && !Number.isSafeInteger(userCount)) return;
+    const result = validateExerciseEstimate({ detectedAmount, userEstimate: userCount, confidence, minimumConfidence: 0.60, maximumDeviationPercent: 10 });
     setComparison(result); setStage("result");
   }
 
   async function confirmActivity() {
-    if (!analysis || !comparison || comparison.status !== "accepted" || !UUID.test(sessionId)) return;
+    const detectedAmount = exercise === "plank" ? plankAnalysis?.validSeconds : analysis?.repetitions;
+    const confidence = exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence;
+    const frames = exercise === "plank" ? plankAnalysis?.usableFrames : analysis?.usableFrames;
+    const ratio = exercise === "plank" ? plankAnalysis?.usableRatio : analysis?.usableRatio;
+    const durationSeconds = exercise === "plank" ? plankAnalysis?.recordingSeconds : analysis?.durationSeconds;
+    if (detectedAmount === undefined || confidence === undefined || frames === undefined || ratio === undefined || durationSeconds === undefined || !comparison || comparison.status !== "accepted" || !UUID.test(sessionId)) return;
     setBusy(true);
     try {
-      const type: ActivityType = exercise === "pushups" ? "Push-ups" : "Squats";
+      const type: ActivityType = exercise === "pushups" ? "Push-ups" : exercise === "squats" ? "Squats" : exercise === "situps" ? "Sit-ups" : "Plank";
+      const metricType = exercise === "plank" ? "hold_seconds" as const : "repetitions" as const;
       const preview = calculateActivityXp({ type: exercise, source: "camera", recordedSession: true,
-        metrics: { repetitions: analysis.repetitions },
-        exerciseValidation: { detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.60 } });
+        metrics: exercise === "plank" ? { holdSeconds: detectedAmount } : { repetitions: detectedAmount },
+        exerciseValidation: { detectedAmount, userEstimate: Number(reported), confidence, minimumConfidence: 0.60, maximumDeviationPercent: 10 } });
+      const exerciseSession = { sessionId, exerciseType: exercise, metricType,
+        ...(exercise === "plank" ? { reportedHoldSeconds: Number(reported), detectedHoldSeconds: detectedAmount } : { reportedReps: Number(reported), detectedReps: detectedAmount }),
+        confidence, validationMethod: "local_pose_landmarks", recordingDurationSeconds: durationSeconds,
+        modelVersion: "pose_landmarker_lite_float16_v1", validationVersion: "mylvl-pose-v1", cameraPerspective: perspective, usableFrames: frames,
+        usableRatio: ratio, deviationPercent: comparison.deviationPercent };
       const saved = await onSave({
-        id: sessionId, type, date: new Date().toISOString(), duration: Math.max(1, Math.ceil(analysis.durationSeconds / 60)),
-        reps: analysis.repetitions, xp: preview.xp, source: "camera", sourceKey: sessionId, validationStatus: "pose_validated",
-        exerciseSession: { sessionId, reportedReps: Number(reported), detectedReps: analysis.repetitions, confidence: analysis.confidence,
-          validationMethod: "local_pose_landmarks", recordingDurationSeconds: analysis.durationSeconds,
-          modelVersion: "pose_landmarker_lite_float16_v1", validationVersion: "mylvl-pose-v1", cameraPerspective: perspective, usableFrames: analysis.usableFrames,
-          usableRatio: analysis.usableRatio, deviationPercent: comparison.deviationPercent },
+        id: sessionId, type, date: new Date().toISOString(), duration: Math.max(1, Math.ceil(durationSeconds / 60)),
+        ...(exercise === "plank" ? { holdSeconds: detectedAmount } : { reps: detectedAmount }),
+        xp: preview.xp, source: "camera", sourceKey: sessionId, validationStatus: "pose_validated", exerciseSession,
       });
       if (saved) onClose();
     } finally { setBusy(false); }
   }
   const sessionId = useRef(crypto.randomUUID()).current;
-  const counts = analysis && Number(reported) > 0 ? validateExerciseEstimate({ detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.60 }) : null;
-  const expPreview = analysis && counts?.status === "accepted" ? calculateActivityXp({ type: exercise, source: "camera", recordedSession: true,
-    metrics: { repetitions: analysis.repetitions }, exerciseValidation: { detectedAmount: analysis.repetitions, userEstimate: Number(reported), confidence: analysis.confidence, minimumConfidence: 0.60 } }).xp : 0;
+  const detectedAmount = exercise === "plank" ? plankAnalysis?.validSeconds : analysis?.repetitions;
+  const currentConfidence = exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence;
+  const counts = detectedAmount !== undefined && currentConfidence !== undefined && Number(reported) > 0
+    ? validateExerciseEstimate({ detectedAmount, userEstimate: Number(reported), confidence: currentConfidence, minimumConfidence: 0.60, maximumDeviationPercent: 10 }) : null;
+  const xpReady = exercise === "plank" ? Boolean(plankAnalysis?.validationReady && (detectedAmount ?? 0) > 0) : Boolean(analysis?.validationReady);
+  const expPreview = xpReady && detectedAmount !== undefined && currentConfidence !== undefined && counts?.status === "accepted" ? calculateActivityXp({ type: exercise, source: "camera", recordedSession: true,
+    metrics: exercise === "plank" ? { holdSeconds: detectedAmount } : { repetitions: detectedAmount },
+    exerciseValidation: { detectedAmount, userEstimate: Number(reported), confidence: currentConfidence, minimumConfidence: 0.60, maximumDeviationPercent: 10 } }).xp : 0;
 
   return <div className="modal-scrim camera-scrim" role="presentation"><section className="activity-modal exercise-camera" role="dialog" aria-modal="true" aria-labelledby="camera-title">
     <header className="modal-head"><div><div className="eyebrow">ON-DEVICE EXERCISE RECOGNITION</div><h2 id="camera-title">Camera workout</h2></div><button className="icon-button" onClick={() => { cleanup(); onClose(); }} aria-label="Close"><X size={18}/></button></header>
     <p>Choose a standard bodyweight movement. The app analyzes the live camera feed on this device; it does not record or upload a video.</p>
-    <div className="camera-exercise-tabs">{EXERCISES.map((item) => <button key={item.kind} className={exercise === item.kind ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => { setExercise(item.kind); setStage("setup"); setAnalysis(null); setComparison(null); }}>{item.label}</button>)}</div>
+    <div className="camera-exercise-tabs">{EXERCISES.map((item) => <button key={item.kind} className={exercise === item.kind ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => { setExercise(item.kind); if (item.kind === "plank" || item.kind === "situps") setPerspective("side"); setStage("setup"); setAnalysis(null); setPlankAnalysis(null); setComparison(null); }}>{item.label}</button>)}</div>
     <div className="camera-perspectives" role="group" aria-label="Camera angle">
-      <button className={perspective === "front" ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => setPerspective("front")}>Front view · recommended</button>
+      <button className={perspective === "front" ? "active" : ""} disabled={exercise === "plank" || exercise === "situps" || stage === "recording" || stage === "countdown"} onClick={() => setPerspective("front")}>Front view · recommended</button>
       <button className={perspective === "side" ? "active" : ""} disabled={stage === "recording" || stage === "countdown"} onClick={() => setPerspective("side")}>Side view · alternative</button>
     </div>
     <div className="camera-preview-wrap">
@@ -243,21 +277,21 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
         </div>}
         <span>{perspective === "front" ? "Line up your head, shoulders and hands · 1–2 m away · 30–60 cm high" : "SIDE · phone beside you · 2–3 m away · 30–60 cm high"}</span>
       </div>}
-      {(stage === "countdown" || stage === "recording") && <div className="camera-status-pill">{stage === "countdown" ? `Ready in ${countdown}` : `Recording · ${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")} · ${liveReps} reps`}</div>}
+      {(stage === "countdown" || stage === "recording") && <div className="camera-status-pill">{stage === "countdown" ? `Ready in ${countdown}` : `Recording · ${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")}`}</div>}
     </div>
-    <div className={`camera-position ${positionReady ? "ready" : ""}`} role="status" aria-live="polite"><span className="camera-state-dot"/>{positionReady ? "Upper body visible — hold the selected camera angle." : cameraLive ? "MYLVL cannot see your head and a full arm yet. Adjust the phone to the guide. You can still start, but reps may not be detected." : <>{perspective === "front" ? "Face the camera at the head end; keep your head, shoulders, both arms and hands visible. Aim to include the full body." : "Stand side-on to the camera; keep shoulders, hips and ankles visible."} Use good light and leave space around you.</>}</div>
+    <div className={`camera-position ${positionReady ? "ready" : ""}`} role="status" aria-live="polite"><span className="camera-state-dot"/>{positionReady ? "Required body landmarks are visible — hold the selected camera angle." : cameraLive ? (exercise === "plank" || exercise === "situps" ? "MYLVL needs your shoulder, hip, knee and ankle visible from the side. Adjust the phone to the guide." : "MYLVL cannot see enough of your body yet. Adjust the phone to the guide; you can still start, but detection may be limited.") : <>{exercise === "pushups" && perspective !== "side" ? "Face the camera at the head end; keep your head, shoulders, both arms and hands visible. Aim to include the full body." : "Stand side-on to the camera; keep the required body landmarks visible. For planks, keep your forearm, shoulder, hip, knee and ankle in frame."} Use good light and leave space around you.</>}</div>
     <div className="camera-note"><Shield size={16}/><span>Local recognition is a helpful estimate, not tamper-proof proof or professional form assessment. Maximum analysis time: 90 seconds. Performance metrics may be provided by the model host; video frames stay on your device.</span></div>
-    {stage === "recording" && <div className="camera-recording-guidance" role="status" aria-live="polite"><strong>Live count: {liveReps} reps</strong><span>{repStatus} Finish the set with “Finish set &amp; analyze”, then compare and confirm. Nothing is saved yet.</span></div>}
+    {stage === "recording" && <div className="camera-recording-guidance" role="status" aria-live="polite"><strong>Live analysis active</strong><span>{exercise === "plank" ? (livePlankValid ? "Plank posture is being tracked." : "Adjust to the side-view guide and hold a steady plank.") : repStatus} Detected totals stay hidden until you enter your estimate. Finish the set to compare and confirm; nothing is saved yet.</span></div>}
     <div className={`camera-controls ${stage === "recording" ? "is-recording" : ""}`}>
       {stage === "setup" && <><label>Camera<select value={facing} onChange={(e) => setFacing(e.target.value as "user"|"environment")}><option value="environment">Rear camera</option><option value="user">Front camera</option></select></label><button className="primary-button" onClick={() => void startCamera()}>{cameraLive ? "Reload camera" : "Enable camera"}</button>{cameraLive && runtimeRef.current && <button className="primary-button" onClick={() => { setError(""); setCountdown(3); setStage("countdown"); }}>Start · 3-second countdown</button>}</>}
       {stage === "countdown" && <button className="secondary-button" onClick={() => setStage("setup")}>Cancel countdown</button>}
       {stage === "recording" && <><span>Pose engine: {runtimeStatus} · no video file is created</span><button className="primary-button" onClick={stopSession}>Finish set &amp; analyze</button><button className="secondary-button" onClick={() => { runningRef.current = false; cleanup(); setCameraLive(false); setAnalysis(null); setStage("setup"); }}>Cancel session</button></>}
-      {stage === "report" && <><label className="field-label">How many did you complete? Enter your count before seeing the detected result.<input type="number" min="1" step="1" inputMode="numeric" value={reported} onChange={(e) => setReported(e.target.value)} /></label><button className="primary-button" disabled={!Number.isSafeInteger(Number(reported)) || Number(reported) <= 0} onClick={validate}>Compare and validate</button><button className="secondary-button" onClick={() => void retry()}><RotateCcw size={15}/> Retry recording</button></>}
-      {stage === "result" && <><div className="camera-result"><b>Detected {analysis?.repetitions} · You reported {reported}</b><span>Pose confidence {Math.round((analysis?.confidence ?? 0) * 100)}% · usable frames {analysis?.usableFrames}/{analysis?.totalFrames}</span><span className={comparison?.status === "accepted" ? "camera-success" : "camera-warning"}>{comparison?.status === "accepted" ? `Validated · ${comparison.deviationPercent?.toFixed(1)}% difference` : `Not validated · ${comparison?.status}${comparison?.deviationPercent == null ? "" : ` · ${comparison.deviationPercent.toFixed(1)}% difference`}`}</span>{analysis?.warnings.map((warning) => <small key={warning}>{warning}</small>)}</div>{comparison?.status === "accepted" ? <><div className="camera-result"><b>Estimated reward: {expPreview} EXP</b><span>Server recalculates this using the existing activity rates and daily limits.</span></div><button className="primary-button" disabled={busy} onClick={() => void confirmActivity()}><Check size={16}/> {busy ? "Saving…" : "Confirm activity"}</button></> : <p className="camera-warning">No EXP is awarded. Retry with a clear side view and a complete movement cycle.</p>}<button className="secondary-button" onClick={() => void retry()}><RotateCcw size={15}/> Retry</button></>}
+      {stage === "report" && <><label className="field-label">{exercise === "plank" ? "How many seconds did you hold the plank? Enter your estimate before seeing the detected duration." : "How many repetitions did you complete? Enter your estimate before seeing the detected result."}<input type="number" min={exercise === "plank" ? "0.1" : "1"} max={exercise === "plank" ? "90" : "500"} step={exercise === "plank" ? "0.1" : "1"} inputMode="decimal" value={reported} onChange={(e) => { setReported(e.target.value); setError(""); }} /></label>{error && <div className="camera-warning" role="alert">{error}</div>}<button className="primary-button" disabled={!Number.isFinite(Number(reported)) || Number(reported) <= 0 || Number(reported) > (exercise === "plank" ? 90 : 500) || (exercise !== "plank" && !Number.isSafeInteger(Number(reported)))} onClick={validate}>Compare and validate</button><button className="secondary-button" onClick={() => void retry()}><RotateCcw size={15}/> Retry recording</button></>}
+      {stage === "result" && <><div className="camera-result"><b>{exercise === "plank" ? `Detected valid hold ${(plankAnalysis?.validSeconds ?? 0).toFixed(1)} s` : `Detected ${analysis?.repetitions ?? 0} repetitions`} · You reported {reported}{exercise === "plank" ? " s" : ""}</b><span>Pose confidence {Math.round(((exercise === "plank" ? plankAnalysis?.confidence : analysis?.confidence) ?? 0) * 100)}% · usable frames {exercise === "plank" ? plankAnalysis?.usableFrames : analysis?.usableFrames}/{exercise === "plank" ? plankAnalysis?.totalFrames : analysis?.totalFrames}</span><span className={comparison?.status === "accepted" ? "camera-success" : "camera-warning"}>{comparison?.status === "accepted" ? `Validated · ${comparison.deviationPercent?.toFixed(1)}% difference` : `Not validated · ${comparison?.status}${comparison?.deviationPercent == null ? "" : ` · ${comparison.deviationPercent.toFixed(1)}% difference`}`}</span>{(exercise === "plank" ? plankAnalysis?.warnings : analysis?.warnings)?.map((warning) => <small key={warning}>{warning}</small>)}{exercise === "plank" && plankAnalysis && <small>Unvalidated time: {plankAnalysis.invalidSeconds.toFixed(1)} s. Only validated hold time contributes to EXP.</small>}</div>{comparison?.status === "accepted" ? <><div className="camera-result"><b>Estimated reward: {expPreview} EXP</b><span>Server recalculates this using the existing activity rates and daily limits.</span></div><button className="primary-button" disabled={busy || expPreview <= 0} onClick={() => void confirmActivity()}><Check size={16}/> {busy ? "Saving…" : "Confirm activity"}</button></> : <p className="camera-warning">No EXP is awarded. Retry with a clear camera view and a complete movement cycle.</p>}<button className="secondary-button" onClick={() => void retry()}><RotateCcw size={15}/> Retry</button></>}
       {stage === "error" && <><div className="camera-warning" role="alert">{error}</div><button className="primary-button" onClick={() => void startCamera()}>Retry camera</button></>}
     </div>
     <small className="camera-runtime">Pose runtime: {runtimeStatus}{cameraEpoch ? " · MediaPipe Pose Landmarker Lite" : ""}{error && stage !== "error" ? ` · ${error}` : ""}</small>
-    <p className="camera-limits">Supported in this version: standard push-ups and bodyweight squats. Exercise variations and form quality are not assessed. Leaving the screen stops the camera and releases resources.</p>
+    <p className="camera-limits">Supported camera workouts: push-ups, bodyweight squats, sit-ups and forearm planks. Pull-ups remain available through the general activity flow. Exercise variations and form quality are not assessed. Leaving the screen stops the camera and releases resources.</p>
   </section></div>;
 }
 

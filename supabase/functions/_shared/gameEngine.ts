@@ -83,6 +83,7 @@ export type ExerciseValidation = {
   userEstimate: number;
   confidence: number;
   minimumConfidence?: number;
+  maximumDeviationPercent?: number;
 };
 
 export type ExerciseValidationResult = {
@@ -116,7 +117,7 @@ export function validateExerciseEstimate(
     return { status: "inconclusive", deviationPercent, detectedAmount, confidence };
   }
   return {
-    status: deviationPercent <= 50 ? "accepted" : "review",
+    status: deviationPercent <= (validation.maximumDeviationPercent ?? 50) ? "accepted" : "review",
     deviationPercent,
     detectedAmount,
     confidence,
