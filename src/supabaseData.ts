@@ -143,6 +143,7 @@ export async function loadCloudData(userId: string): Promise<{
       steps: item.steps ?? undefined,
       calories: item.active_calories == null ? item.calories ?? undefined : Number(item.active_calories),
       reps: item.repetitions ?? undefined,
+      holdSeconds: item.hold_seconds == null ? undefined : Number(item.hold_seconds),
       notes: item.notes ?? undefined,
       xp: xpByActivity.get(item.id) ?? 0,
       source: item.source === "camera" ? "camera" : item.source === "nose_counter" ? "nose_counter" : item.source === "screenshot" ? "screenshot" : item.source === "manual" ? "manual" : "provider",
