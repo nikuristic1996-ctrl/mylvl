@@ -1,4 +1,7 @@
 -- Run after the Phase 2/6 fixtures and Nose Counter migration in disposable PostgreSQL.
+-- Use a synthetic account so the camera test cannot affect this daily cap.
+insert into auth.users(id) values ('99999999-9999-4999-8999-999999999999') on conflict do nothing;
+insert into public.profiles(id,username,timezone) values ('99999999-9999-4999-8999-999999999999','Nose Counter CI user','UTC') on conflict do nothing;
 do $$
 declare
   first_result jsonb;
@@ -6,7 +9,7 @@ declare
   second_result jsonb;
   before_activities integer;
   before_transactions integer;
-  user_id constant uuid := '11111111-1111-4111-8111-111111111111';
+  user_id constant uuid := '99999999-9999-4999-8999-999999999999';
   first_key constant uuid := '77777777-7777-4777-8777-777777777777';
   second_key constant uuid := '88888888-8888-4888-8888-888888888888';
 begin
