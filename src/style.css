@@ -2995,6 +2995,16 @@ a {
 .camera-guide-frame .guide-silhouette { fill: #b7f56a20; stroke: #d8ffae; stroke-width: 2.6; stroke-linejoin: round; }
 .camera-guide-frame .guide-center { fill: none; stroke: #d8ffae88; stroke-width: 1.4; stroke-dasharray: 4 4; }
 .camera-guide-overlay span { padding: 6px 10px; border: 1px solid #b7f56a66; border-radius: 999px; background: #10131de8; color: #e7f9d2; font-size: 11px; font-weight: 750; text-align: center; }
+.camera-guide-lines { position: absolute; inset: 10px 12px; z-index: 2; pointer-events: none; }
+.camera-guide-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px dashed #c7ff79d9; filter: drop-shadow(0 1px 3px #000); }
+.camera-guide-line.head { top: 18%; border-color: #c4a8ff; }
+.camera-guide-line.shoulders { top: 47%; border-color: #87d9ff; }
+.camera-guide-line.hands { top: 88%; border-color: #c7ff79; }
+.camera-guide-line b { position: absolute; top: -12px; left: 0; padding: 3px 7px; border: 1px solid currentColor; border-radius: 999px; background: #10131deb; color: #f2f4f8; font-size: 10px; font-weight: 800; letter-spacing: .08em; line-height: 1; }
+.camera-guide-line.head b { color: #dfd0ff; }
+.camera-guide-line.shoulders b { color: #c5edff; }
+.camera-guide-line.hands b { color: #e4ffbf; }
+
 .camera-exercise-tabs button, .camera-controls select { min-height: 44px; border: 1px solid var(--border, #303543); border-radius: 10px; background: #171a22; color: #f4f6fa; padding: 10px 12px; }
 .camera-exercise-tabs button.active { border-color: #b7f56a; color: #c7ff79; }
 .camera-preview-wrap { position: relative; min-height: 220px; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 14px; background: #080a0e; border: 1px solid #303543; }
