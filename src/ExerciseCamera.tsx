@@ -125,7 +125,8 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
         const second = Math.floor((now - startRef.current) / 1000);
         if (second !== lastShownSecondRef.current) { lastShownSecondRef.current = second; setElapsed(second); }
       }
-      if (now - lastInferenceRef.current >= 100 && videoRef.current && runtimeRef.current) {
+      // Aim for up to 15 inference samples per second so brisk reps are less likely to fall between frames.
+      if (now - lastInferenceRef.current >= 66 && videoRef.current && runtimeRef.current) {
         lastInferenceRef.current = now;
         try {
           const landmarks = runtimeRef.current.detect(videoRef.current, now);

@@ -30,10 +30,10 @@ const INDEX = {
 } as const;
 const VISIBILITY_MIN = 0.55;
 const MIN_REP_MS = 500;
-const FRONT_PUSHUP_MIN_REP_MS = 180;
+const FRONT_PUSHUP_MIN_REP_MS = 100;
 const FRONT_PUSHUP_START_BODY_DROP = 0.035;
-const FRONT_PUSHUP_BOTTOM_BODY_DROP = 0.09;
-const FRONT_PUSHUP_CLEAR_BODY_DROP = 0.14;
+const FRONT_PUSHUP_BOTTOM_BODY_DROP = 0.06;
+const FRONT_PUSHUP_CLEAR_BODY_DROP = 0.10;
 const MAX_REP_MS = 12_000;
 const REQUIRED_CONFIDENCE = 0.60;
 
@@ -280,32 +280,50 @@ export class ExerciseRepRecognizer {
     const returningFromPeak = bodyDrop <= this.frontPeakBodyDrop - FRONT_PUSHUP_START_BODY_DROP;
 
     if (this.phase === "lowering") {
-      if (this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP) this.phase = "bottom";
-      else if (returningFromPeak) this.phase = "rising";
+      // A fast rep can have no sampled frame in the middle of the rising
+      // phase. Count the completed return immediately when the next observed
+      // frame is already back at the top.
+      if (bodyDrop <= FRONT_PUSHUP_START_BODY_DROP &&
+          this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP) {
+        this.completeFrontPushup(now, bodyY, angle);
+      } else if (this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP) {
+        this.phase = "bottom";
+      } else if (returningFromPeak) {
+        this.phase = "rising";
+      }
     } else if (this.phase === "bottom") {
-      if (returningFromPeak) this.phase = "rising";
+      if (bodyDrop <= FRONT_PUSHUP_START_BODY_DROP &&
+          this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP) {
+        this.completeFrontPushup(now, bodyY, angle);
+      } else if (returningFromPeak) {
+        this.phase = "rising";
+      }
     } else if (this.phase === "rising") {
       // If the user reverses direction before returning to the top, resume
       // tracking the descent instead of accepting a partial movement.
       if (bodyDrop >= this.frontPeakBodyDrop - FRONT_PUSHUP_START_BODY_DROP / 2) {
         this.phase = "bottom";
       } else if (bodyDrop <= FRONT_PUSHUP_START_BODY_DROP) {
-        const cycleDuration = now - this.cycleStartMs;
-        const armRange = this.frontHighestAngle - this.lowestAngle;
-        const visibleMovement = armRange >= 6 || this.frontPeakBodyDrop >= FRONT_PUSHUP_CLEAR_BODY_DROP;
-        if (cycleDuration >= FRONT_PUSHUP_MIN_REP_MS &&
-            this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP &&
-            visibleMovement) {
-          this.reps++;
-        } else {
-          this.sawPartial = true;
-        }
-        this.phase = "ready";
-        this.frontTopBodyY = bodyY;
-        this.frontTopAngle = angle;
-        this.frontPeakBodyDrop = 0;
+        this.completeFrontPushup(now, bodyY, angle);
       }
     }
+  }
+
+  private completeFrontPushup(now: number, bodyY: number, angle: number) {
+    const cycleDuration = now - this.cycleStartMs;
+    const armRange = this.frontHighestAngle - this.lowestAngle;
+    const visibleMovement = armRange >= 6 || this.frontPeakBodyDrop >= FRONT_PUSHUP_CLEAR_BODY_DROP;
+    if (cycleDuration >= FRONT_PUSHUP_MIN_REP_MS &&
+        this.frontPeakBodyDrop >= FRONT_PUSHUP_BOTTOM_BODY_DROP &&
+        visibleMovement) {
+      this.reps++;
+    } else {
+      this.sawPartial = true;
+    }
+    this.phase = "ready";
+    this.frontTopBodyY = bodyY;
+    this.frontTopAngle = angle;
+    this.frontPeakBodyDrop = 0;
   }
 
   private updatePhase(angle: number, alignment: number, now: number, bodyY?: number) {
