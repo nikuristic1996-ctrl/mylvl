@@ -3045,3 +3045,5 @@ a {
 .nose-counter-actions .secondary-button { min-height: 48px; }
 .nose-counter-error { color: #ff8585; margin: 10px 0; }
 @media (max-width: 520px) { .nose-counter-modal { padding: 18px; } .nose-counter-push { min-height: 160px; } }
+
+.nose-counter-push.waiting, .nose-counter-push.waiting:disabled { background: #e44958; border-color: #ff7782; color: #fff; opacity: 1; cursor: wait; }
