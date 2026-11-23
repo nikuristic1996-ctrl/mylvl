@@ -236,7 +236,12 @@ export function ExerciseCamera({ onClose, onSave }: ExerciseCameraProps) {
       {!cameraLive && <div className="camera-placeholder"><Camera size={26}/><span>Camera preview will appear here.</span></div>}
       {stage === "setup" && <div className={`camera-guide-overlay ${perspective}`} aria-hidden="true">
         <div className="camera-guide-frame"><svg viewBox="0 0 240 120" focusable="false"><path className="guide-silhouette" d="M120 8c-10 0-17 8-17 18 0 8 4 14 11 17v5c-13 1-25 4-32 10-5 4-10 11-15 20L49 96c-3 5 0 10 5 10 3 0 5-2 7-5l19-22 15-16-6 24-7 23h76l-7-23-6-24 15 16 19 22c2 3 4 5 7 5 5 0 8-5 5-10l-18-18c-5-9-10-16-15-20-7-6-19-9-32-10v-5c7-3 11-9 11-17 0-10-7-18-17-18z"/><path className="guide-center" d="M120 49v58M87 58l33 9 33-9"/></svg></div>
-        <span>{perspective === "front" ? "FRONT · at head end · about 1–2 m away · 30–60 cm high" : "SIDE · phone beside you · 2–3 m away · 30–60 cm high"}</span>
+        {perspective === "front" && <div className="camera-guide-lines">
+          <div className="camera-guide-line head"><b>HEAD</b></div>
+          <div className="camera-guide-line shoulders"><b>SHOULDERS</b></div>
+          <div className="camera-guide-line hands"><b>HANDS</b></div>
+        </div>}
+        <span>{perspective === "front" ? "Line up your head, shoulders and hands · 1–2 m away · 30–60 cm high" : "SIDE · phone beside you · 2–3 m away · 30–60 cm high"}</span>
       </div>}
       {(stage === "countdown" || stage === "recording") && <div className="camera-status-pill">{stage === "countdown" ? `Ready in ${countdown}` : `Recording · ${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")} · ${liveReps} reps`}</div>}
     </div>
