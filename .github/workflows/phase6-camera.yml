@@ -101,7 +101,7 @@ jobs:
           supabase start --workdir "$stack" -x studio,imgproxy,inbucket,logflare,vector
           # The historic migration revokes this hosted helper. The app schema enables RLS explicitly.
           psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 \
-            -c 'create function public.rls_auto_enable() returns event_trigger language plpgsql as $ begin end; $' \
+            -c 'create function public.rls_auto_enable() returns event_trigger language plpgsql as $fixture$ begin end; $fixture$' \
             -f supabase/schema.sql \
             -f supabase/migrations/20261113011810_phase_2_secure_progression.sql
 
