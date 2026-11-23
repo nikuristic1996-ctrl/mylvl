@@ -58,6 +58,15 @@ jobs:
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261123210000_phase_6_5_camera_workouts.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/phase6-5-migration-assertions.sql
+      - name: Race two identical camera reservations on disposable PostgreSQL
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/phase6-5-concurrent-camera-call.sql > /tmp/camera-one.log &
+          first=$!
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/phase6-5-concurrent-camera-call.sql > /tmp/camera-two.log &
+          second=$!
+          wait "$first"
+          wait "$second"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/phase6-5-concurrent-camera-assertions.sql
       - uses: actions/upload-artifact@v4
         if: always()
         with:
